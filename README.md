@@ -215,3 +215,7 @@ The app passes on your full environment with these changes:
 |---|---|
 | **2** | "Needs you" alerts: a tab badge and OS notification when claude rings the bell or reports status (OSC 9 / OSC 7501). Per-launch `--model` and `--permission-mode`. Pinned folders. Search in scrollback |
 | **3** | An optional Docker sandbox per session. Claude Code hooks integration for exact working/waiting status. File tree and git diff panels. A browser for past conversations. Auto-update and code signing. A CI build matrix for all three OSes, which also makes the macOS installer |
+
+## License
+
+[MIT](LICENSE) © 2026 Vasyl Kravinskyi

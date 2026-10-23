@@ -29,50 +29,12 @@ A desktop app for **Windows, macOS and Linux** that runs the real **Claude Code 
 
 ## Install
 
-Ready-made installers are in the [`installers/`](installers) folder.
-
-| System | Installer |
-|---|---|
-| Windows 10/11, x64 | `claude-helper-0.1.0-setup.exe` |
-| Linux, x64 | `claude-helper-0.1.0.AppImage` |
-| macOS | Not included yet; build it on a Mac (see [macOS](#macos)) |
-
 ClaudeHelper runs the Claude Code CLI but doesn't include it. Install it and log in once before you start the app:
 
 - **Windows (PowerShell):** `irm https://claude.ai/install.ps1 | iex`
 - **macOS and Linux:** `curl -fsSL https://claude.ai/install.sh | bash`
 
 Then run `claude` once in a terminal to log in. The app finds `claude` by itself. If yours lives somewhere unusual, set its path in **Settings**.
-
-### Windows
-
-1. Run `claude-helper-0.1.0-setup.exe`. It installs for your user only, so it needs no admin rights, and adds Start menu and desktop shortcuts.
-2. The installer isn't code-signed yet, so Windows SmartScreen may warn about an unknown publisher. Click **More info**, then **Run anyway**.
-
-To uninstall, use **Settings → Apps → Installed apps**.
-
-### Linux
-
-The AppImage runs on most distributions without installing:
-
-```bash
-chmod +x claude-helper-0.1.0.AppImage
-./claude-helper-0.1.0.AppImage
-```
-
-- **FUSE:** AppImages need FUSE 2. On Ubuntu 22.04 install it with `sudo apt install libfuse2`; on 24.04 and later the package is `libfuse2t64`.
-- **Ubuntu 24.04 and later:** if the app closes right away with a sandbox error, start it with `./claude-helper-0.1.0.AppImage --no-sandbox`. Ubuntu restricts the sandbox that Electron apps use.
-
-### macOS
-
-A macOS installer can only be built on a Mac, so there is none in `installers/` yet. On a Mac with Node.js 22+:
-
-```bash
-npm install
-npm run build:mac    # installers/claude-helper-0.1.0.dmg
-```
-
-Open the `.dmg` and drag **ClaudeHelper** into **Applications**. The app isn't signed or notarized. On the Mac that built it, it opens normally. A copy downloaded on another Mac is blocked the first time: open **System Settings → Privacy & Security** and click **Open Anyway**.
 
 ## Features
 
@@ -134,7 +96,7 @@ npm run build:linux:docker  # the Linux installers from Windows or macOS, built 
 npm run build:unpack        # unpacked app in installers/<platform>-unpacked, handy for testing
 ```
 
-Everything lands in `installers/`. Git keeps only the installer files from that folder and ignores the rest (unpacked apps, blockmaps, build logs).
+Everything lands in `installers/`, which git ignores.
 
 node-pty is a native module, so each installer is built on its own system: the Windows one on Windows, the macOS one on a Mac. The Linux ones can also come from Windows or macOS: `build:linux:docker` copies the sources into a `node:22-bookworm` container, compiles node-pty there and copies the installers back. It needs Docker running.
 
@@ -193,7 +155,6 @@ The split and dock rules are pure functions in `layout.ts`.
 | `tests/unit/` | Vitest tests for path resolution, session management, past-session parsing, shell detection, layouts, settings, validation and keybindings |
 | `tests/e2e/` | Playwright tests that drive the built app. A fake `claude` reports how it was launched and echoes input |
 | `scripts/` | `build-linux-docker.mjs`, which builds the Linux installers in Docker |
-| `installers/` | The built installers |
 | `docs/screenshots/` | The screenshots in this README |
 
 ### Security

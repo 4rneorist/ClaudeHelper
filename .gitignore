@@ -5,10 +5,4 @@ out
 *.log*
 test-results
 playwright-report
-
-# electron-builder output: only the installers themselves go into git
-installers/*
-!installers/*-setup.exe
-!installers/*.dmg
-!installers/*.AppImage
-!installers/*.deb
+installers

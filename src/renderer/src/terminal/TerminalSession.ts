@@ -5,7 +5,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import type { TerminalSpec } from '../../../shared/ipc'
-import { useStore } from '../store'
+import { activeTerminalKey, useStore } from '../store'
+import { activityFromTitle, isAsking, previewOf } from './claudeActivity'
 import { classifyKey, imagePasteSequence, NEWLINE_SEQUENCE, type KeyAction } from './keybindings'
 import { fontFamilyFor } from './themes'
 
@@ -25,6 +26,11 @@ export const DND_MIME = 'application/x-claudehelper'
 
 /** Wheel distance per font-size step: one mouse-wheel notch, or a short trackpad swipe. */
 const WHEEL_STEP = 50
+
+/** Once Claude stops, how long its screen has to be quiet before it is read. */
+const SETTLE_QUIET_MS = 300
+/** …and the longest wait after a change, since its status line can keep redrawing. */
+const SETTLE_MAX_MS = 1500
 
 // ---- routing of PTY output to the terminal that owns the session ------------------------------
 
@@ -66,6 +72,11 @@ export class TerminalSession {
   private fitFrame = 0
   private resizeTimer: ReturnType<typeof setTimeout> | undefined
   private wheelDelta = 0
+  /** Claude's title says it stopped working: finished, or asking you something. */
+  private stopped = false
+  private settleTimer: ReturnType<typeof setTimeout> | undefined
+  /** When to read the screen at the latest, epoch ms; 0 when no read is pending. */
+  private settleBy = 0
 
   constructor(
     readonly key: string,
@@ -101,9 +112,20 @@ export class TerminalSession {
         if (this.sessionId) window.api.resize(this.sessionId, this.term.cols, this.term.rows)
       }, 40)
     })
-    this.term.onTitleChange((title) =>
-      useStore.getState().patchTerminal(this.key, { termTitle: title })
-    )
+    this.term.onTitleChange((title) => {
+      const store = useStore.getState()
+      store.patchTerminal(this.key, { termTitle: title })
+      const activity = activityFromTitle(title)
+      // Stopped: finished or asking. Its screen tells which, once drawn.
+      this.stopped = activity === 'idle'
+      if (this.stopped) this.settle()
+      else {
+        clearTimeout(this.settleTimer)
+        this.settleBy = 0
+        store.reportActivity(this.key, activity, this.looking())
+      }
+    })
+    this.term.onBell(() => useStore.getState().ringBell(this.key, this.looking()))
     this.term.attachCustomKeyEventHandler((ev) => this.handleKey(ev))
 
     // Ctrl (or Cmd on macOS) + wheel changes the font size instead of scrolling.
@@ -195,13 +217,58 @@ export class TerminalSession {
 
   receive(data: string): void {
     this.term.write(data)
+    // While Claude is stopped its screen still changes: a prompt appears, or gets answered.
+    if (this.stopped) this.settle()
   }
 
   exited(exitCode: number): void {
     if (this.sessionId) bySessionId.delete(this.sessionId)
     this.sessionId = null
+    this.stopped = false
+    clearTimeout(this.settleTimer)
     this.term.write(`\r\n\x1b[2m[process exited with code ${exitCode}]\x1b[0m\r\n`)
-    useStore.getState().patchTerminal(this.key, { status: 'exited', exitCode })
+    useStore.getState().patchTerminal(this.key, {
+      status: 'exited',
+      exitCode,
+      activity: undefined,
+      attention: undefined
+    })
+  }
+
+  /** The user is looking at this terminal: it is the focused pane of a focused window. */
+  private looking(): boolean {
+    return document.hasFocus() && activeTerminalKey(useStore.getState()) === this.key
+  }
+
+  /**
+   * Reads whether stopped Claude asks for something, once its screen has been quiet for a moment
+   * (or has kept changing for too long, as its status line can).
+   */
+  private settle(): void {
+    if (!this.settleBy) this.settleBy = Date.now() + SETTLE_MAX_MS
+    clearTimeout(this.settleTimer)
+    const wait = Math.max(0, Math.min(SETTLE_QUIET_MS, this.settleBy - Date.now()))
+    this.settleTimer = setTimeout(() => {
+      this.settleBy = 0
+      if (!this.stopped || this.disposed) return
+      const activity = isAsking(this.screenLines()) ? 'asking' : 'idle'
+      useStore.getState().reportActivity(this.key, activity, this.looking())
+    }, wait)
+  }
+
+  /** The last lines worth a glance, for the tab preview. */
+  previewLines(count: number): string[] {
+    return previewOf(this.screenLines(), count)
+  }
+
+  /** The text of the screen (not the scrollback, nor where the user scrolled to). */
+  private screenLines(): string[] {
+    const buffer = this.term.buffer.active
+    const lines: string[] = []
+    for (let y = buffer.baseY; y < buffer.baseY + this.term.rows; y++) {
+      lines.push(buffer.getLine(y)?.translateToString(true) ?? '')
+    }
+    return lines
   }
 
   /** Coalesces bursts of ResizeObserver callbacks into one fit per frame. */
@@ -234,6 +301,7 @@ export class TerminalSession {
     this.disposed = true
     cancelAnimationFrame(this.fitFrame)
     clearTimeout(this.resizeTimer)
+    clearTimeout(this.settleTimer)
     if (this.sessionId) {
       bySessionId.delete(this.sessionId)
       void window.api.kill(this.sessionId)

@@ -46,6 +46,13 @@ describe('tabColors', () => {
     expect(tabColors('#2563eb', 'light', false).background).toBe('#81a3ed')
   })
 
+  it('blends inactive session tabs toward the session tab bar instead', () => {
+    // --term-bg in dark, --bg in light.
+    expect(tabColors('#2563eb', 'dark', false, 'session').background).toBe('#1e408c')
+    expect(tabColors('#2563eb', 'light', false, 'session').background).toBe('#85a7f2')
+    expect(tabColors('#2563eb', 'light', true, 'session').background).toBe('#2563eb')
+  })
+
   it('keeps the title readable on every preset, active or not, in both themes', () => {
     for (const { value } of TAB_COLORS) {
       for (const theme of ['dark', 'light'] as const) {

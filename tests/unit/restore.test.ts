@@ -116,12 +116,61 @@ describe('restoredState / snapshot', () => {
           title: 'New session',
           subTabs: [],
           activeSubTab: null,
-          claudeCount: 0
+          claudeCount: 0,
+          joinedTo: null,
+          joinSize: 0.5
         }
       ]
     })
     expect(s.workspaces).toHaveLength(1)
     expect(s.terminals.find((t) => t.key === key)).toMatchObject({ pid: 42, startedAt: 123 })
     expect(s.terminals.filter((t) => t.pid !== undefined)).toHaveLength(1)
+  })
+
+  it('keeps tab colors and muting', () => {
+    const colored: UiState = {
+      ...saved,
+      terminals: saved.terminals.map((t) =>
+        t.key === 'old-a' ? { ...t, color: '#2563eb', muted: true } : t
+      )
+    }
+    const r = restoredState(colored)
+    const a = leaves(r.workspaces[0].subTabs[1].layout)[0]
+    expect(r.terminals[a]).toMatchObject({ color: '#2563eb', muted: true })
+    expect(snapshot(r).terminals.find((t) => t.title === 'Claude 1')).toMatchObject({
+      color: '#2563eb',
+      muted: true
+    })
+    expect(snapshot(r).terminals.find((t) => t.title === 'Claude 2')).not.toHaveProperty('color')
+  })
+
+  it('keeps two folders joined side by side, with the divider where it was', () => {
+    const other = process.platform === 'win32' ? 'C:\\work\\api' : '/work/api'
+    const pair: UiState = {
+      ...saved,
+      workspaces: [
+        saved.workspaces[0],
+        {
+          cwd: other,
+          claudeCount: 1,
+          activeSubTab: 0,
+          subTabs: [{ layout: { type: 'leaf', id: 'old-api' }, activePane: 'old-api' }],
+          joinedTo: 0,
+          joinSize: 0.3
+        }
+      ],
+      terminals: [
+        ...saved.terminals,
+        { key: 'old-api', cwd: other, title: 'Claude 1', spec: { kind: 'claude', mode: 'new' } }
+      ]
+    }
+    const r = restoredState(pair)
+    const [left, right] = r.workspaces
+    expect(right).toMatchObject({ joinedTo: left.key, joinSize: 0.3 })
+    expect(left.joinedTo).toBeNull()
+    expect(snapshot(r).workspaces.map((w) => [w.joinedTo, w.joinSize])).toEqual([
+      [undefined, undefined],
+      [0, 0.3]
+    ])
   })
 })

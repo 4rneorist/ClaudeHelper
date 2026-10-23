@@ -17,6 +17,8 @@ export type KeyAction =
   | { type: 'prevTab' }
   | { type: 'nextFolder' }
   | { type: 'prevFolder' }
+  /** Jump to the next session that asks for your answer or finished unseen. */
+  | { type: 'nextWaiting' }
 
 export interface KeyInfo {
   type: string
@@ -58,6 +60,7 @@ function classifyKeydown(ev: KeyInfo, platform: string, hasSelection: boolean): 
     if (key === 't') return { type: 'newTerminal' }
     if (key === 'n') return { type: 'newFolderTab' }
     if (key === 'w') return { type: 'closePane' }
+    if (key === 'j' && ev.shiftKey) return { type: 'nextWaiting' }
     if (key === '=' || key === '+') return { type: 'zoom', delta: 1 }
     if (key === '-') return { type: 'zoom', delta: -1 }
     if (key === '0') return { type: 'zoom', delta: 0 }
@@ -75,6 +78,7 @@ function classifyKeydown(ev: KeyInfo, platform: string, hasSelection: boolean): 
     if (key === 't') return { type: 'newTerminal' }
     if (key === 'n') return { type: 'newFolderTab' }
     if (key === 'w') return { type: 'closePane' }
+    if (key === 'j') return { type: 'nextWaiting' }
     return PASS // e.g. Ctrl+Shift+- is claude's undo
   }
 

@@ -153,6 +153,37 @@ code {
   position: absolute;
   inset: 0;
 }
+/* Between two folders shown side by side; its left edge is set inline. */
+.splitter.folder-splitter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+
+/* Starts each half's tab row when two folders are joined: which folder this is. */
+.pair-label {
+  flex-shrink: 0;
+  max-width: 160px;
+  height: 22px;
+  margin-right: 6px;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+.pair-label.active {
+  color: var(--text);
+  font-weight: 600;
+  border-color: var(--accent);
+}
 
 /* ---- tab bar ---- */
 
@@ -203,6 +234,22 @@ code {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The folder's git branch, "*" for uncommitted changes. */
+.tab-branch {
+  flex-shrink: 1;
+  min-width: 24px;
+  max-width: 90px;
+  margin-left: -4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted);
+}
+.tab.colored .tab-branch {
+  color: inherit;
+  opacity: 0.75;
+}
 
 .tab-close,
 .tab-action,
@@ -243,23 +290,99 @@ code {
   margin-right: -6px;
 }
 
-/* A folder with its own color: background and text color come from inline styles. */
-.tab.colored:hover {
+/* ⚙ and the folder button only on the active tab and the one under the mouse. */
+.tab:not(.active):not(:hover) .tab-extra,
+.subtab:not(.active):not(:hover) .tab-extra {
+  visibility: hidden;
+}
+
+/* A folder or terminal with its own color: background and text color come from inline styles. */
+.tab.colored:hover,
+.subtab.colored:hover {
   background-image: linear-gradient(rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.08));
 }
 .tab.colored .tab-close,
-.tab.colored .tab-action {
+.tab.colored .tab-action,
+.subtab.colored .tab-close,
+.subtab.colored .tab-action {
   color: inherit;
   opacity: 0.75;
 }
 .tab.colored .tab-close:hover,
-.tab.colored .tab-action:hover {
+.tab.colored .tab-action:hover,
+.subtab.colored .tab-close:hover,
+.subtab.colored .tab-action:hover {
   background: color-mix(in srgb, currentColor 18%, transparent);
   color: inherit;
   opacity: 1;
 }
-.tab.colored .status-dot {
+.tab.colored .status-dot,
+.subtab.colored .status-dot {
   box-shadow: 0 0 0 1.5px color-mix(in srgb, currentColor 55%, transparent);
+}
+
+/* Where a dragged tab will land. */
+.tab {
+  position: relative;
+}
+.tab.insert-before::before,
+.tab.insert-after::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--accent);
+}
+.tab.insert-before::before {
+  left: -2px;
+}
+.tab.insert-after::after {
+  right: -2px;
+}
+
+/* Two joined folders: a link between their tabs; the one not focused still looks open. */
+.pair-link {
+  align-self: center;
+  margin: 0 -2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.tab.partner:not(.colored) {
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  color: var(--text);
+}
+
+/* ⚙ popover of a folder or terminal: title, color, and for folders joining another. */
+.tab-settings {
+  display: flex;
+  flex-direction: column;
+  width: 188px;
+}
+.tab-settings-label {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tab-settings-label:first-child {
+  margin-top: 0;
+}
+.tab-settings-row {
+  display: flex;
+  gap: 6px;
+}
+input.tab-settings-title {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+}
+select.tab-settings-join {
+  padding: 4px 6px;
+}
+.tab-settings-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .color-picker {
@@ -338,14 +461,59 @@ code {
 .status-dot.running {
   background: var(--ok);
 }
+/* A ring, so it isn't mistaken for a Claude that is idle. */
 .status-dot.starting {
-  background: var(--warn);
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--warn);
 }
 .status-dot.error {
   background: var(--err);
 }
 .status-dot.exited {
   background: var(--muted);
+}
+/* Claude works (green), is idle and waits for your next prompt (yellow), or asks for your
+   answer: a permission, a question, a plan to approve (red). Working and asking pulse. */
+.status-dot.working {
+  --pulse: var(--ok);
+  background: var(--ok);
+  animation: status-pulse 1.4s ease-out infinite;
+}
+.status-dot.idle {
+  background: var(--warn);
+}
+.status-dot.asking {
+  --pulse: var(--err);
+  background: var(--err);
+  animation: status-pulse 1s ease-out infinite;
+}
+@keyframes status-pulse {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse) 70%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--pulse) 0%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-dot.working,
+  .status-dot.asking {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--pulse) 45%, transparent);
+  }
+}
+/* It finished, or asks, while you were elsewhere: marked until you look at it. */
+.tab.attention-finished,
+.subtab.attention-finished {
+  box-shadow: inset 0 -2px 0 var(--warn);
+}
+.tab.attention-asking,
+.subtab.attention-asking {
+  box-shadow: inset 0 -2px 0 var(--err);
+}
+.tab[class*='attention-'] .tab-title,
+.subtab[class*='attention-'] .tab-title {
+  font-weight: 600;
 }
 
 /* ---- start screen ---- */
@@ -551,11 +719,22 @@ code {
   text-overflow: ellipsis;
   min-width: 0;
 }
-.status-state.running {
+.status-state.running,
+.status-state.working {
   color: var(--ok);
+}
+.status-state.idle {
+  color: var(--warn);
+}
+.status-state.asking {
+  color: var(--err);
+  font-weight: 600;
 }
 .status-state.error {
   color: var(--err);
+}
+.status-branch {
+  color: var(--muted);
 }
 
 /* ---- settings dialog ---- */
@@ -839,6 +1018,22 @@ body.resizing-row * {
   background: var(--bg-hover);
   color: var(--text);
 }
+.pane-settings {
+  font-size: 13px;
+}
+.pane-settings + .pane-close {
+  margin-left: 0;
+}
+/* A terminal with its own color: background and text color come from inline styles. */
+.pane-header.colored .pane-subtitle,
+.pane-header.colored .pane-close {
+  color: inherit;
+  opacity: 0.75;
+}
+.pane-header.colored .pane-close:hover {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  opacity: 1;
+}
 .pane-body {
   position: relative;
   flex: 1;
@@ -916,12 +1111,8 @@ body.resizing-row * {
   font-size: 12px;
 }
 
-/* ---- cross-folder docking ---- */
+/* ---- terminals from another folder (layouts saved by older versions) ---- */
 
-.tab.drop-target {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
 .tab-folder,
 .pane-folder {
   color: var(--muted);
@@ -933,4 +1124,334 @@ body.resizing-row * {
   border-radius: 8px;
   background: var(--bg-hover);
   white-space: nowrap;
+}
+
+/* ---- notifications: the bell, its list, and toasts ---- */
+
+.icon-button.bell {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.bell-count {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  color: #fff;
+}
+.bell-count.finished {
+  background: var(--warn);
+  color: #000;
+}
+.bell-count.asking {
+  background: var(--err);
+}
+
+.notification-list {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  max-height: 60vh;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.28);
+}
+.notification-list header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.notification-list header strong {
+  flex: 1;
+}
+.link-button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--accent);
+  font-size: 12px;
+}
+.link-button:disabled {
+  color: var(--muted);
+  opacity: 0.6;
+}
+.notification-list ul {
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  overflow-y: auto;
+}
+.notification-empty {
+  margin: 0;
+  padding: 16px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.notification {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.notification:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.notification:disabled {
+  opacity: 0.55;
+}
+.notification.unread {
+  background: var(--bg-elev);
+}
+.notification.unread .notification-source {
+  font-weight: 600;
+}
+.notification .status-dot,
+.toast .status-dot {
+  margin-top: 5px;
+  animation: none;
+}
+.notification-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.notification-source,
+.notification-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notification-text {
+  color: var(--muted);
+  font-size: 12px;
+}
+.notification-when {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Above the status bar, bottom right. */
+.toasts {
+  position: fixed;
+  right: 12px;
+  bottom: 34px;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 340px;
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--warn);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+}
+.toast.asking {
+  border-left-color: var(--err);
+}
+.toast-open {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+  padding: 10px 4px 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.toast-open .notification-source {
+  font-weight: 600;
+}
+.toast-close {
+  border: none;
+  background: transparent;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+.toast-close:hover {
+  color: var(--text);
+}
+
+/* ---- waiting summary in the status bar ---- */
+
+.status-waiting {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.status-wait {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+.status-wait:hover {
+  background: var(--bg-hover);
+}
+.status-wait.asking {
+  color: var(--err);
+  font-weight: 600;
+}
+.status-wait .status-dot {
+  animation: none;
+}
+
+/* ---- muting and Do not disturb ---- */
+
+.tab-muted {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--muted);
+  opacity: 0.85;
+}
+.tab.colored .tab-muted,
+.subtab.colored .tab-muted {
+  color: inherit;
+}
+.tab-settings-mute,
+.dnd-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tab-settings-mute {
+  margin-top: 10px;
+}
+.tab-settings-mute small,
+.dnd-switch small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+.dnd-switch {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ---- sounds in Settings ---- */
+
+dialog.settings {
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+fieldset.sounds {
+  margin: 0;
+  padding: 0 0 0 24px;
+  border: none;
+}
+fieldset.sounds:disabled {
+  opacity: 0.5;
+}
+.sound-row {
+  display: grid;
+  grid-template-columns: 210px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.sound-row input[type='range'] {
+  width: 100%;
+}
+.sound-row .play {
+  padding: 4px 9px;
+  font-size: 11px;
+}
+
+/* ---- tab preview on hover ---- */
+
+.tab-preview {
+  position: fixed;
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.28);
+  color: var(--text);
+  font-size: 12px;
+  /* It takes no clicks: the tab under it keeps working. */
+  pointer-events: none;
+}
+.tab-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tab-preview-doing {
+  margin-left: auto;
+  color: var(--muted);
+}
+.tab-preview-doing.asking {
+  color: var(--err);
+  font-weight: 600;
+}
+.tab-preview-doing.idle {
+  color: var(--warn);
+}
+.tab-preview-doing.working {
+  color: var(--ok);
+}
+.tab-preview-topic {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tab-preview-screen {
+  margin: 0;
+  padding: 8px;
+  max-height: 200px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--term-bg);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tab-preview-hint {
+  color: var(--muted);
+  font-size: 11px;
 }

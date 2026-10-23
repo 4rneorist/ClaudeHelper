@@ -1,11 +1,15 @@
 import { useEffect } from 'react'
 import { focusActiveTerminal, runShortcut } from './actions'
+import { startAttention } from './attention'
+import { startGitPolling } from './gitPolling'
 import { startPersistence } from './persist'
 import { SettingsDialog } from './components/SettingsDialog'
 import { StatusBar } from './components/StatusBar'
 import { TabBar } from './components/TabBar'
-import { WorkspaceView } from './components/WorkspaceView'
-import { activeTerminalKey, useStore } from './store'
+import { Toasts } from './components/Notifications'
+import { TabSettings } from './components/TabSettings'
+import { FolderSplitter, WorkspaceView } from './components/WorkspaceView'
+import { activeTerminalKey, pairOf, useStore } from './store'
 import { classifyKey } from './terminal/keybindings'
 import { ThemeContext } from './themeContext'
 import { useResolvedTheme } from './useTheme'
@@ -18,6 +22,7 @@ const APP_SHORTCUTS = new Set([
   'prevTab',
   'nextFolder',
   'prevFolder',
+  'nextWaiting',
   'zoom'
 ])
 
@@ -33,7 +38,11 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     // Persist only after the saved state has been restored, or it would be overwritten.
-    void init().then(startPersistence)
+    void init().then(() => {
+      startPersistence()
+      startAttention()
+      startGitPolling()
+    })
   }, [init])
 
   useEffect(() => {
@@ -82,24 +91,43 @@ function App(): React.JSX.Element {
 
   if (!ready) return <div className="loading">Loading…</div>
 
+  // The active folder, or the two joined folders it belongs to (left first).
+  const shown = pairOf(workspaces, activeWorkspace)
+  const joinSize = workspaces.find((w) => w.key === shown[1])?.joinSize ?? 1
+
   return (
     <ThemeContext.Provider value={resolvedTheme}>
       <div className="app">
         <TabBar />
         <main className="workspace">
-          {workspaces.map((ws) => (
-            <div
-              key={ws.key}
-              className="workspace-panel"
-              hidden={ws.key !== activeWorkspace}
-              role="tabpanel"
-            >
-              <WorkspaceView workspace={ws} visible={ws.key === activeWorkspace} />
-            </div>
-          ))}
+          {workspaces.map((ws) => {
+            // Panels stay in tab order (moving them would restart their terminals); a joined
+            // pair is placed left and right by position instead.
+            const side = shown.length > 1 ? shown.indexOf(ws.key) : -1
+            return (
+              <div
+                key={ws.key}
+                className="workspace-panel"
+                hidden={!shown.includes(ws.key)}
+                role="tabpanel"
+                style={
+                  side === 0
+                    ? { right: `${(1 - joinSize) * 100}%` }
+                    : side === 1
+                      ? { left: `${joinSize * 100}%` }
+                      : undefined
+                }
+              >
+                <WorkspaceView workspace={ws} visible={shown.includes(ws.key)} />
+              </div>
+            )
+          })}
+          {shown.length > 1 && <FolderSplitter left={shown[0]} size={joinSize} />}
         </main>
         <StatusBar />
         <SettingsDialog />
+        <TabSettings />
+        <Toasts />
       </div>
     </ThemeContext.Provider>
   )

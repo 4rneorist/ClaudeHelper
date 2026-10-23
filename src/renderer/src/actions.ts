@@ -1,8 +1,15 @@
 import { DEFAULT_FONT_SIZE } from './constants'
 import { leaves } from './layout'
-import { activeTerminalKey, useStore, type TerminalState } from './store'
+import {
+  activeTerminalKey,
+  useStore,
+  workspaceTitle,
+  type TabSettingsTarget,
+  type TerminalState
+} from './store'
 import { disposeTerminal, getTerminal } from './terminal/TerminalSession'
 import type { KeyAction } from './terminal/keybindings'
+import { nextWaiting, type WaitKind } from './waiting'
 
 const isLive = (t: TerminalState | undefined): boolean =>
   t?.status === 'running' || t?.status === 'starting'
@@ -53,7 +60,9 @@ export async function closeWorkspace(workspace: string): Promise<void> {
     useStore.getState().removeWorkspace(workspace)
     return
   }
-  await closeTerminals(keys, `all terminals in "${ws.title}"`)
+  const { settings, appInfo } = useStore.getState()
+  const title = workspaceTitle(ws, settings?.folderTitles, appInfo?.platform ?? '')
+  await closeTerminals(keys, `all terminals in "${title}"`)
 }
 
 export function zoom(delta: 1 | -1 | 0): void {
@@ -95,7 +104,31 @@ export function runShortcut(action: KeyAction): void {
     case 'zoom':
       zoom(action.delta)
       break
+    case 'nextWaiting':
+      jumpToWaiting()
+      break
   }
+}
+
+/** Opens the ⚙ popover for a folder or terminal, or closes it if it is already open for it. */
+export function toggleTabSettings(target: TabSettingsTarget): void {
+  const { tabSettings, setTabSettings } = useStore.getState()
+  const id = (t: TabSettingsTarget | null): string | null =>
+    t && (t.kind === 'folder' ? `folder:${t.workspace}` : `terminal:${t.terminal}`)
+  setTabSettings(id(tabSettings) === id(target) ? null : target)
+}
+
+/** The rect a tab's ⚙ popover opens under: the whole tab, not just the button. */
+export function tabAnchor(e: React.MouseEvent, tabSelector: string): DOMRect {
+  const el = (e.currentTarget as Element).closest(tabSelector) ?? e.currentTarget
+  return el.getBoundingClientRect()
+}
+
+/** Brings up the next session that asks for your answer or finished unseen (of one kind). */
+export function jumpToWaiting(kind?: WaitKind): void {
+  const store = useStore.getState()
+  const key = nextWaiting(store, activeTerminalKey(store), kind)
+  if (key) store.revealTerminal(key)
 }
 
 export function focusActiveTerminal(): void {

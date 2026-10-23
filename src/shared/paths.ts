@@ -7,6 +7,17 @@ export function samePath(a: string, b: string, platform: string): boolean {
     : norm(a).toLowerCase() === norm(b).toLowerCase()
 }
 
+/** The value a map holds for path `p`, with keys compared as paths. */
+export function findByPath<T>(
+  map: Record<string, T> | undefined,
+  p: string,
+  platform: string
+): T | null {
+  if (!map) return null
+  const hit = Object.keys(map).find((key) => samePath(key, p, platform))
+  return hit === undefined ? null : map[hit]
+}
+
 export function folderName(p: string): string {
   const trimmed = p.replace(/[\\/]+$/, '')
   return trimmed.split(/[\\/]/).pop() || p

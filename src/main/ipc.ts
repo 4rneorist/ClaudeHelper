@@ -28,7 +28,10 @@ import {
   type ResolveDeps
 } from './claudeResolver'
 import { claudeConfigDir, listPastSessions, transcriptPath } from './claudeSessions'
+import { notifyAttention } from './attention'
+import { gitInfo } from './gitInfo'
 import type { SessionManager } from './sessionManager'
+import { showWaiting } from './taskbar'
 import type { SettingsStore } from './settingsStore'
 import { detectShells } from './shells'
 import type { UiStateStore } from './uiState'
@@ -186,6 +189,16 @@ export function registerIpc(ctx: IpcContext): void {
       ? ctx.settings.setFolderColor(folder, color)
       : ctx.settings.get()
   )
+  handle(IPC.folderTitleSet, (folder: unknown, title: unknown) =>
+    isAbsoluteFolderPath(folder) && (title === null || typeof title === 'string')
+      ? ctx.settings.setFolderTitle(folder, title)
+      : ctx.settings.get()
+  )
+  handle(IPC.folderMutedSet, (folder: unknown, muted: unknown) =>
+    isAbsoluteFolderPath(folder) && typeof muted === 'boolean'
+      ? ctx.settings.setFolderMuted(folder, muted)
+      : ctx.settings.get()
+  )
 
   handle(IPC.pickFolder, async () => {
     const win = ctx.getWindow()
@@ -258,4 +271,30 @@ export function registerIpc(ctx: IpcContext): void {
   on(IPC.openFolder, (folder: unknown) => {
     if (isAbsoluteFolderPath(folder) && isDirectory(folder)) void shell.openPath(folder)
   })
+
+  on(IPC.attentionNotify, (req: unknown) => {
+    const win = ctx.getWindow()
+    const r = req as Record<string, unknown> | null
+    if (!win || !r || typeof r.key !== 'string' || typeof r.title !== 'string') return
+    if (typeof r.body !== 'string' || !ctx.settings.get().notifyWhenWaiting) return
+    notifyAttention(
+      win,
+      { key: r.key.slice(0, 64), title: r.title.slice(0, 200), body: r.body.slice(0, 500) },
+      (key) => win.webContents.send(IPC.attentionFocus, key)
+    )
+  })
+
+  on(IPC.attentionSummary, (summary: unknown) => {
+    const win = ctx.getWindow()
+    const s = summary as Record<string, unknown> | null
+    const count = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 1000
+    if (win && s && count(s.asking) && count(s.finished) && count(s.working)) {
+      showWaiting(win, { asking: s.asking, finished: s.finished, working: s.working })
+    }
+  })
+
+  handle(IPC.gitInfo, (folder: unknown) =>
+    isAbsoluteFolderPath(folder) ? gitInfo(folder, ctx.getEnv()) : null
+  )
 }

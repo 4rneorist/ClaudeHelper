@@ -21,10 +21,28 @@ export interface Settings {
   experimentalConptyDll: boolean
   /** Reopen the folders, tabs, splits and Claude conversations that were open at last exit. */
   restoreSession: boolean
+  /** OS notification and a flashing taskbar button when a session needs you and the app is in the background. */
+  notifyWhenWaiting: boolean
+  /** A sound when a session finishes, and another when it asks for your answer. */
+  soundOnAttention: boolean
+  finishedSound: SoundName
+  askingSound: SoundName
+  /** 0–100. */
+  soundVolume: number
+  /** Remind again while a session keeps asking unseen, every this many minutes; 0 = never. */
+  reminderMinutes: number
+  /** Folders whose sessions make no sounds, toasts or notifications. */
+  mutedFolders: string[]
   recentFolders: string[]
   /** Folder tab background per folder path, as #rrggbb. */
   folderColors: Record<string, string>
+  /** Folder tab title per folder path, when it isn't the folder's name. */
+  folderTitles: Record<string, string>
 }
+
+/** The sounds the app can play, synthesized in the renderer (sounds.ts). */
+export const SOUND_NAMES = ['chime', 'rise', 'bell', 'blip', 'knock'] as const
+export type SoundName = (typeof SOUND_NAMES)[number]
 
 /** The only color format a folder tab accepts; it ends up in a style attribute. */
 export const HEX_COLOR = /^#[0-9a-f]{6}$/i
@@ -102,6 +120,28 @@ export interface AppInfo {
 
 export type ContextMenuChoice = 'copy' | 'paste' | 'selectAll' | null
 
+/** A Claude session stopped and waits for you; main tells the OS if the window is in the background. */
+export interface AttentionRequest {
+  /** The terminal, so clicking the notification can bring it up. */
+  key: string
+  title: string
+  body: string
+}
+
+/** How many sessions ask for your answer, finished unseen, or work (muted ones left out). */
+export interface WaitingSummary {
+  asking: number
+  finished: number
+  working: number
+}
+
+/** A folder's git state: its branch (or short commit when detached) and uncommitted changes. */
+export interface GitInfo {
+  branch: string
+  /** null when git itself couldn't be run. */
+  dirty: boolean | null
+}
+
 export interface ConfirmOptions {
   message: string
   detail?: string
@@ -119,6 +159,8 @@ export const IPC = {
   settingsUpdate: 'settings:update',
   recentRemove: 'recent:remove',
   folderColorSet: 'folder:setColor',
+  folderTitleSet: 'folder:setTitle',
+  folderMutedSet: 'folder:setMuted',
   openFolder: 'app:openFolder',
   claudeStatus: 'claude:status',
   pickFolder: 'dialog:pickFolder',
@@ -133,7 +175,11 @@ export const IPC = {
   pastSessions: 'sessions:past',
   uiLoad: 'ui:load',
   uiSave: 'ui:save',
-  uiFlushRequest: 'ui:flushRequest'
+  uiFlushRequest: 'ui:flushRequest',
+  attentionNotify: 'attention:notify',
+  attentionSummary: 'attention:summary',
+  attentionFocus: 'attention:focus',
+  gitInfo: 'git:info'
 } as const
 
 /** The API the preload script exposes as `window.api`. */
@@ -150,6 +196,10 @@ export interface ClaudeHelperApi {
   removeRecent(folder: string): Promise<Settings>
   /** Sets a folder's tab color (#rrggbb), or clears it with null. */
   setFolderColor(folder: string, color: string | null): Promise<Settings>
+  /** Sets a folder's tab title; null or blank goes back to the folder's name. */
+  setFolderTitle(folder: string, title: string | null): Promise<Settings>
+  /** Mutes a folder's sessions (no sounds, toasts or notifications), or unmutes them. */
+  setFolderMuted(folder: string, muted: boolean): Promise<Settings>
   /** Opens the folder in the OS file manager (File Explorer, Finder, …). */
   openFolder(folder: string): void
   claudeStatus(): Promise<ClaudeStatus>
@@ -172,4 +222,12 @@ export interface ClaudeHelperApi {
   saveUiState(state: UiState): Promise<Record<string, string>>
   /** Main asks for an immediate save (before quitting). */
   onUiFlushRequest(listener: () => void): () => void
+  /** Flashes the taskbar button and shows an OS notification, unless the window has the focus. */
+  notifyAttention(req: AttentionRequest): void
+  /** What the sessions are doing, for the taskbar button and the dock / launcher badge. */
+  setAttentionSummary(summary: WaitingSummary): void
+  /** The user clicked a notification: bring up this terminal. */
+  onAttentionFocus(listener: (key: string) => void): () => void
+  /** The folder's git branch and whether it has uncommitted changes; null outside a repository. */
+  gitInfo(folder: string): Promise<GitInfo | null>
 }

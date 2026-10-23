@@ -104,6 +104,77 @@ describe('SettingsStore', () => {
     expect(new SettingsStore(file).get().folderColors).toEqual({ '/a': '#abcdef' })
   })
 
+  it('saves a title per folder, trimmed, and clears it with null or a blank title', () => {
+    const store = new SettingsStore(file, 'win32')
+    store.setFolderTitle('C:\\Projects\\App', '  Frontend  ')
+    store.setFolderTitle('C:\\Projects\\Api', 'Backend')
+    expect(new SettingsStore(file, 'win32').get().folderTitles).toEqual({
+      'C:\\Projects\\App': 'Frontend',
+      'C:\\Projects\\Api': 'Backend'
+    })
+    expect(store.setFolderTitle('c:\\projects\\app', '   ').folderTitles).toEqual({
+      'C:\\Projects\\Api': 'Backend'
+    })
+    expect(store.setFolderTitle('C:\\Projects\\Api', null).folderTitles).toEqual({})
+  })
+
+  it('cuts long folder titles and drops invalid ones from the settings file', () => {
+    mkdirSync(path.dirname(file), { recursive: true })
+    writeFileSync(
+      file,
+      JSON.stringify({ folderTitles: { '/a': 'x'.repeat(200), '/b': '  ', '/c': 5, '': 'y' } })
+    )
+    expect(new SettingsStore(file).get().folderTitles).toEqual({ '/a': 'x'.repeat(80) })
+  })
+
+  it('does not let update() overwrite folder titles', () => {
+    const store = new SettingsStore(file, 'linux')
+    store.setFolderTitle('/a', 'Mine')
+    expect(store.update({ folderTitles: { '/b': 'Other' } }).folderTitles).toEqual({ '/a': 'Mine' })
+  })
+
+  it('notifies when a session needs you unless switched off', () => {
+    const store = new SettingsStore(file, 'linux')
+    expect(store.get().notifyWhenWaiting).toBe(true)
+    store.update({ notifyWhenWaiting: 'no' })
+    expect(store.get().notifyWhenWaiting).toBe(true)
+    store.update({ notifyWhenWaiting: false })
+    expect(new SettingsStore(file, 'linux').get().notifyWhenWaiting).toBe(false)
+  })
+
+  it('keeps sound choices, volume and reminder in range', () => {
+    const store = new SettingsStore(file, 'linux')
+    expect(store.get()).toMatchObject({
+      finishedSound: 'chime',
+      askingSound: 'rise',
+      soundVolume: 70,
+      reminderMinutes: 5
+    })
+    store.update({
+      finishedSound: 'bell',
+      askingSound: 'nope',
+      soundVolume: 250,
+      reminderMinutes: -3
+    })
+    expect(new SettingsStore(file, 'linux').get()).toMatchObject({
+      finishedSound: 'bell',
+      askingSound: 'rise',
+      soundVolume: 100,
+      reminderMinutes: 0
+    })
+  })
+
+  it('mutes and unmutes folders, and update() leaves them alone', () => {
+    const store = new SettingsStore(file, 'win32')
+    store.setFolderMuted('C:\\Projects\\App', true)
+    store.setFolderMuted('C:\\Projects\\Api', true)
+    expect(store.setFolderMuted('c:\\projects\\app', false).mutedFolders).toEqual([
+      'C:\\Projects\\Api'
+    ])
+    expect(store.update({ mutedFolders: [] }).mutedFolders).toEqual(['C:\\Projects\\Api'])
+    expect(new SettingsStore(file, 'win32').get().mutedFolders).toEqual(['C:\\Projects\\Api'])
+  })
+
   it('recovers from a corrupt settings file', () => {
     const store = new SettingsStore(file)
     store.update({ fontSize: 20 })

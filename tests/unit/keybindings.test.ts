@@ -70,6 +70,16 @@ describe('classifyKey on Windows/Linux', () => {
 })
 
 describe('folder tab shortcuts', () => {
+  it('jumps to the next waiting session with Ctrl+Shift+J, or Cmd+Shift+J on macOS', () => {
+    for (const platform of ['win32', 'linux']) {
+      const ctrlShiftJ = key('J', { ctrlKey: true, shiftKey: true })
+      expect(classifyKey(ctrlShiftJ, platform, false).type).toBe('nextWaiting')
+      expect(classifyKey(key('j', { ctrlKey: true }), platform, false).type).toBe('pass')
+    }
+    const cmdShiftJ = key('J', { metaKey: true, shiftKey: true })
+    expect(classifyKey(cmdShiftJ, 'darwin', false).type).toBe('nextWaiting')
+  })
+
   it('opens a folder tab and switches folders with Ctrl+PageUp/PageDown', () => {
     expect(classifyKey(key('N', { ctrlKey: true, shiftKey: true }), 'win32', false).type).toBe(
       'newFolderTab'

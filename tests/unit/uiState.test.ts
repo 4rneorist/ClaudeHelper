@@ -90,6 +90,56 @@ describe('sanitizeUiState', () => {
     expect(sanitizeUiState('garbage')).toBeNull()
   })
 
+  it('keeps tab colors that are #rrggbb and drops anything else', () => {
+    const s = sanitizeUiState(
+      state({
+        terminals: [claude('t1', A, { color: '#2563EB' }), claude('t2', A, { color: 'red' })]
+      })
+    )!
+    expect(s.terminals[0].color).toBe('#2563eb')
+    expect(s.terminals[1]).not.toHaveProperty('color')
+  })
+
+  it('keeps a muted tab muted, and only true counts', () => {
+    const s = sanitizeUiState(
+      state({ terminals: [claude('t1', A, { muted: true }), claude('t2', A, { muted: 'yes' })] })
+    )!
+    expect(s.terminals[0].muted).toBe(true)
+    expect(s.terminals[1]).not.toHaveProperty('muted')
+  })
+
+  it('keeps joined folders as pairs: two kept folders, each in one pair, size clamped', () => {
+    const folder = (cwd: string, key: string, extra: object = {}): object => ({
+      cwd,
+      claudeCount: 1,
+      activeSubTab: 0,
+      subTabs: [{ layout: { type: 'leaf', id: key } }],
+      ...extra
+    })
+    const C = path.join(ROOT, 'c')
+    const s = sanitizeUiState({
+      version: 1,
+      activeWorkspace: 0,
+      workspaces: [
+        folder(A, 't1'),
+        { cwd: 'relative', subTabs: [] }, // dropped, so later indexes shift
+        folder(B, 't2', { joinedTo: 0, joinSize: 0.99 }),
+        folder(C, 't3', { joinedTo: 0 }) // A is already in a pair
+      ],
+      terminals: [claude('t1'), claude('t2', B), claude('t3', C)]
+    })!
+    expect(s.workspaces.map((w) => [w.joinedTo, w.joinSize])).toEqual([
+      [undefined, undefined],
+      [0, 0.85],
+      [undefined, undefined]
+    ])
+    // Joined to itself or to a folder that isn't there: ignored.
+    for (const joinedTo of [0, 7, 'x']) {
+      const alone = sanitizeUiState(state({ workspaces: [folder(A, 't1', { joinedTo })] }))!
+      expect(alone.workspaces[0]).not.toHaveProperty('joinedTo')
+    }
+  })
+
   it('keeps pid/startedAt only when asked to', () => {
     const withRuntime = state({
       terminals: [claude('t1', A, { pid: 5, startedAt: 9 }), claude('t2')]

@@ -8,6 +8,14 @@ export function startDrag(e: React.DragEvent, payload: DragPayload): void {
   setTimeout(() => useStore.getState().setDrag(payload), 0)
 }
 
+/** Whether a pane or tab from this folder is being dragged; terminals stay in their folder. */
+export function fromFolder(
+  drag: DragPayload | null,
+  workspace: string
+): drag is Exclude<DragPayload, { kind: 'workspace' }> {
+  return !!drag && drag.kind !== 'workspace' && drag.workspace === workspace
+}
+
 export function endDrag(): void {
   useStore.getState().setDrag(null)
 }

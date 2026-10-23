@@ -1,7 +1,7 @@
 {
   "name": "claude-helper",
   "productName": "ClaudeHelper",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Desktop app for running Claude Code sessions in local folders",
   "main": "./out/main/index.js",
   "author": "Vasyl Kravinskyi",

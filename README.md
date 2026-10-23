@@ -2,6 +2,8 @@
 
 A desktop app for **Windows, macOS and Linux** that runs the real **Claude Code CLI** in tabs and split panes. Pick a folder and a Claude session starts there. Close the app, and next time everything comes back: folders, tabs, splits with their sizes, the window, and each tab's conversation.
 
+**[Download the latest release](https://github.com/4rneorist/ClaudeHelper/releases/latest).** It has installers for Windows (`.exe`), macOS (`.dmg`, Apple Silicon) and Linux (`.AppImage` and `.deb`). You also need the Claude Code CLI, see [Install](#install).
+
 ![ClaudeHelper with two colored folder tabs, ClaudeHelper in blue and Calculator in green. The open one is split: Claude in ClaudeHelper on the left, Claude docked from the Calculator folder top right, PowerShell running the tests bottom right](docs/screenshots/main.png)
 
 ## Why ClaudeHelper

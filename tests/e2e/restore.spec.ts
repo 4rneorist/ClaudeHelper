@@ -217,3 +217,47 @@ test('saves as you go: a crash still restores tabs, conversations and the window
   expect(size).toEqual([900, 650])
   await closeApp(app)
 })
+
+test('brings back folder titles, terminal colors and joined folders', async () => {
+  userData = path.join(tmp, 'userData-tabs')
+  mkdirSync(userData)
+  const other = path.join(tmp, 'other project')
+  mkdirSync(other)
+  writeFileSync(
+    path.join(userData, 'settings.json'),
+    JSON.stringify({ recentFolders: [project, other] })
+  )
+  let { app, page } = await launch()
+  const folderTabs = (): Locator => page.locator('.tabbar .tab')
+  const panels = (): Locator => page.locator('.workspace-panel:not([hidden])')
+  const popover = (): Locator => page.locator('.tab-settings')
+
+  await page.locator('.recent-open', { hasText: 'my project' }).click()
+  await page.getByRole('button', { name: 'New folder tab' }).click()
+  await page.locator('.recent-open', { hasText: 'other project' }).click()
+  await expect(folderTabs()).toHaveCount(2)
+
+  // other project gets a title, its terminal a color, and it joins my project.
+  await folderTabs().nth(1).getByRole('button', { name: 'Settings for other project' }).click()
+  await popover().getByLabel('Title').fill('Backend')
+  await popover().getByLabel('Title').press('Enter')
+  await panels()
+    .locator('.subtab')
+    .first()
+    .getByRole('button', { name: /^Settings for / })
+    .click()
+  await popover().getByRole('button', { name: 'Purple' }).click()
+  await popover().getByLabel('Title').press('Enter')
+  await folderTabs().nth(1).getByRole('button', { name: 'Settings for Backend' }).click()
+  await popover().getByLabel('Join sessions to').selectOption({ label: 'my project' })
+  await expect(panels()).toHaveCount(2)
+  await closeApp(app)
+
+  ;({ app, page } = await launch())
+  await expect(folderTabs()).toHaveCount(2)
+  await expect(folderTabs().nth(0)).toContainText('my project')
+  await expect(folderTabs().nth(1)).toContainText('Backend')
+  await expect(panels()).toHaveCount(2)
+  await expect(panels().nth(1).locator('.subtab').first()).toHaveClass(/colored/)
+  await closeApp(app)
+})

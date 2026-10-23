@@ -3,6 +3,12 @@
 
 import type { TerminalSpec } from './ipc'
 
+/** Longest terminal name kept, whether typed in or read back. */
+export const MAX_TITLE_LENGTH = 80
+
+/** Neither of two joined folders gets less than this share of the window's width. */
+export const MIN_JOIN_SIZE = 0.15
+
 export type Dir = 'row' | 'column'
 
 export type LayoutNode =
@@ -14,6 +20,10 @@ export interface SavedTerminal {
   key: string
   cwd: string
   title: string
+  /** Tab background as #rrggbb. */
+  color?: string
+  /** No sounds, toasts or notifications from it. */
+  muted?: boolean
   spec: TerminalSpec
   /** Claude conversation to resume. */
   claudeSessionId?: string
@@ -32,6 +42,10 @@ export interface SavedWorkspace {
   claudeCount: number
   subTabs: SavedSubTab[]
   activeSubTab: number
+  /** Shown side by side, on the right of the folder at this index. */
+  joinedTo?: number
+  /** The left folder's share of the width in that pair. */
+  joinSize?: number
 }
 
 export interface UiState {

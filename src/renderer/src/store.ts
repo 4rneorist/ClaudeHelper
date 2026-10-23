@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type {
   AppInfo,
   ClaudeStatus,
+  GitInfo,
   SessionInfo,
   Settings,
   ShellProfile,
@@ -9,7 +10,8 @@ import type {
   TerminalSpec,
   UiState
 } from '../../shared/ipc'
-import { folderName, samePath } from '../../shared/paths'
+import { findByPath, folderName, samePath } from '../../shared/paths'
+import { MAX_TITLE_LENGTH } from '../../shared/uiState'
 import {
   contains,
   gridOf,
@@ -21,6 +23,7 @@ import {
   type LayoutNode,
   type Side
 } from './layout'
+import type { ClaudeActivity } from './terminal/claudeActivity'
 
 // Model: a workspace is a top-level tab (one folder, or the start screen). It holds sub-tabs,
 // each with a split layout whose leaves are terminals. Terminals are stored flat by key so they
@@ -33,6 +36,8 @@ export interface TerminalState {
   cwd: string
   spec: TerminalSpec
   title: string
+  /** Tab background as #rrggbb, if the user picked one. */
+  color?: string
   status: TerminalStatus
   session?: SessionInfo
   exitCode?: number
@@ -40,6 +45,21 @@ export interface TerminalState {
   errorCode?: StartSessionErrorCode
   /** Window title the running program set (OSC 0/2). */
   termTitle?: string
+  /** What Claude is doing, read from its window title and screen; unset for other programs. */
+  activity?: ClaudeActivity
+  /** When the current stretch of work started, epoch ms. */
+  workingSince?: number
+  /**
+   * Claude finished, or asks for your answer, while you weren't looking; cleared once you look.
+   * Drives the tab marker, the sound and the OS notification.
+   */
+  attention?: Attention
+  /** When `attention` was set, epoch ms (for reminders). */
+  attentionSince?: number
+  /** The last time Claude finished or asked, looked at or not: each new one plays a sound. */
+  lastCall?: { kind: Attention; at: number }
+  /** No sounds, toasts or notifications from it, and it doesn't count as waiting. Saved. */
+  muted?: boolean
   /** The Claude conversation this tab has open (kept current by the save round-trip). */
   claudeSessionId?: string
   /** When the current process started, epoch ms. */
@@ -63,6 +83,10 @@ export interface Workspace {
   activeSubTab: string | null
   /** For "Claude 1", "Claude 2"… names. */
   claudeCount: number
+  /** Joined folders show side by side: this folder on the right of that one (a workspace key). */
+  joinedTo: string | null
+  /** In a pair, the left folder's share of the width (kept on the right one). */
+  joinSize: number
 }
 
 /**
@@ -75,13 +99,18 @@ export type DragPayload =
   | { kind: 'pane'; workspace: string; subTab: string; pane: string }
   | { kind: 'workspace'; workspace: string }
 
+/** Whose ⚙ settings popover is open, and the tab it opens under. */
+export type TabSettingsTarget =
+  | { kind: 'folder'; workspace: string; anchor: DOMRect }
+  | { kind: 'terminal'; terminal: string; anchor: DOMRect }
+
 export interface OpenOptions {
   /** Start-screen workspace to turn into (or replace with) the folder workspace. */
   fromWorkspace?: string
   title?: string
 }
 
-interface State {
+export interface State {
   appInfo: AppInfo | null
   settings: Settings | null
   claude: ClaudeStatus | null
@@ -90,6 +119,15 @@ interface State {
   activeWorkspace: string
   terminals: Record<string, TerminalState>
   settingsOpen: boolean
+  tabSettings: TabSettingsTarget | null
+  /** Git branch and changes per open folder (cwd); null for folders outside a repository. */
+  gitInfo: Record<string, GitInfo | null>
+  /** Newest first; this run only. */
+  notifications: AppNotification[]
+  /** Ids of the notifications shown as toasts right now, oldest first. */
+  toasts: string[]
+  /** No sounds, toasts or OS notifications for now; not saved, so it can't be forgotten on. */
+  doNotDisturb: boolean
   drag: DragPayload | null
 
   init(): Promise<void>
@@ -106,6 +144,12 @@ interface State {
   fillGrid(workspace: string, subTab: string): void
   dockAt(drag: DragPayload, workspace: string, subTab: string, pane: string, side: Side): void
   moveToSubTab(drag: DragPayload, workspace: string, index: number): void
+  /** Moves a folder tab (with the folder joined to it, if any) to before position `index`. */
+  moveWorkspace(key: string, index: number): void
+  /** Shows folder `key` to the right of `partner`, side by side; null shows it on its own again. */
+  joinWorkspace(key: string, partner: string | null): void
+  /** Sets the left folder's share of the width in the pair `key` belongs to. */
+  resizeJoin(key: string, size: number): void
   removeTerminals(keys: string[]): void
   removeWorkspace(key: string): void
   setActiveWorkspace(key: string): void
@@ -115,14 +159,69 @@ interface State {
   cycleWorkspace(delta: 1 | -1): void
   resizeSplit(workspace: string, subTab: string, path: number[], sizes: number[]): void
   patchTerminal(key: string, patch: Partial<TerminalState>): void
+  /** Sets a terminal's name and/or color; a blank name keeps the old one, color null clears it. */
+  updateTerminal(
+    key: string,
+    change: { title?: string; color?: string | null; muted?: boolean }
+  ): void
   restartTerminal(key: string): void
+  /**
+   * What Claude is doing now (null: not Claude). Finishing after working, or asking you
+   * something, calls for your attention, unless you are `looking` at it (focused, in a focused
+   * window).
+   */
+  reportActivity(key: string, activity: ClaudeActivity | null, looking: boolean): void
+  /** Claude rang the bell (its "terminal_bell" notification): it asks for you. */
+  ringBell(key: string, looking: boolean): void
+  /** Shows a terminal wherever it is: its folder, its tab and its pane. */
+  revealTerminal(key: string): void
   setDrag(drag: DragPayload | null): void
   updateSettings(patch: Partial<Settings>): Promise<void>
   setFolderColor(folder: string, color: string | null): Promise<void>
+  setFolderTitle(folder: string, title: string | null): Promise<void>
   setSettings(settings: Settings): void
   refreshClaude(): Promise<void>
   setSettingsOpen(open: boolean): void
+  setTabSettings(target: TabSettingsTarget | null): void
+  setGitInfo(cwd: string, info: GitInfo | null): void
+  /** Adds to the notification list and shows it as a toast. */
+  notify(n: Omit<AppNotification, 'id' | 'read'>, opts?: { toast?: boolean }): void
+  /** Marks one terminal's notifications as read (and hides their toasts); all without a key. */
+  markNotificationsRead(key?: string): void
+  clearNotifications(): void
+  dismissToast(id: string): void
+  setDoNotDisturb(on: boolean): void
+  setFolderMuted(folder: string, muted: boolean): Promise<void>
 }
+
+/** Claude has to have worked at least this long before finishing calls for you. */
+export const MIN_WORK_MS = 1000
+
+/** Why a terminal calls for you: Claude finished its turn, or asks for your answer. */
+export type Attention = 'finished' | 'asking'
+
+/** A session that finished or asked while you were elsewhere, for the notification list. */
+export interface AppNotification {
+  id: string
+  /** The terminal it came from; it may have been closed since. */
+  key: string
+  kind: Attention
+  /** The tab's and the folder's titles at the time. */
+  tab: string
+  folder: string
+  /** Claude's name for the conversation, if it had one yet. */
+  topic: string
+  /** Epoch ms. */
+  at: number
+  read: boolean
+  /** A reminder that it is still asking. */
+  reminder?: boolean
+  /** The session or its folder is muted, so it came without sound, toast or OS notification. */
+  muted?: boolean
+}
+
+const MAX_NOTIFICATIONS = 50
+const MAX_TOASTS = 3
 
 let initialized: Promise<void> | null = null
 let nextId = 1
@@ -136,7 +235,9 @@ function startWorkspace(): Workspace {
     title: 'New session',
     subTabs: [],
     activeSubTab: null,
-    claudeCount: 0
+    claudeCount: 0,
+    joinedTo: null,
+    joinSize: 0.5
   }
 }
 
@@ -153,6 +254,21 @@ export function locate(
     }
   }
   return null
+}
+
+/** The folders shown together with `key`, left first: [left, right], or [key] when not joined. */
+export function pairOf(workspaces: Workspace[], key: string): string[] {
+  const ws = workspaces.find((w) => w.key === key)
+  if (!ws) return []
+  if (ws.joinedTo) return [ws.joinedTo, ws.key]
+  const right = workspaces.find((w) => w.joinedTo === key)
+  return right ? [key, right.key] : [key]
+}
+
+/** Drops joins to folders that are gone. */
+function unjoinMissing(workspaces: Workspace[]): Workspace[] {
+  const keys = new Set(workspaces.map((w) => w.key))
+  return workspaces.map((w) => (w.joinedTo && !keys.has(w.joinedTo) ? { ...w, joinedTo: null } : w))
 }
 
 export function activeTerminalKey(
@@ -202,12 +318,9 @@ export const useStore = create<State>()((set, get) => {
 
   type Movable = Exclude<DragPayload, { kind: 'workspace' }>
 
-  /** A dragged folder tab stands for the sub-tab it is showing. */
-  const resolveDrag = (drag: DragPayload): Movable | null => {
-    if (drag.kind !== 'workspace') return drag
-    const ws = get().workspaces.find((w) => w.key === drag.workspace)
-    return ws?.activeSubTab ? { kind: 'subtab', workspace: ws.key, subTab: ws.activeSubTab } : null
-  }
+  /** A pane or sub-tab dragged within this folder; terminals don't move between folders. */
+  const sameFolder = (drag: DragPayload, workspace: string): Movable | null =>
+    drag.kind !== 'workspace' && drag.workspace === workspace ? drag : null
 
   /** Removes the dragged pane/sub-tab from wherever it is and returns it as a sub-tab. */
   const detach = (drag: Movable): SubTab | null => {
@@ -232,13 +345,6 @@ export const useStore = create<State>()((set, get) => {
     return { key: newKey('sub'), layout: leaf(drag.pane), activePane: drag.pane }
   }
 
-  /** Folders whose last terminal was dragged away close; focus stays with the drop target. */
-  const pruneEmpty = (target: string): void =>
-    set((s) => ({
-      workspaces: s.workspaces.filter((w) => w.kind === 'start' || w.subTabs.length > 0),
-      activeWorkspace: target
-    }))
-
   return {
     appInfo: null,
     settings: null,
@@ -248,6 +354,11 @@ export const useStore = create<State>()((set, get) => {
     activeWorkspace: first.key,
     terminals: {},
     settingsOpen: false,
+    tabSettings: null,
+    gitInfo: {},
+    notifications: [],
+    toasts: [],
+    doNotDisturb: false,
     drag: null,
 
     init() {
@@ -357,7 +468,7 @@ export const useStore = create<State>()((set, get) => {
     },
 
     dockAt(rawDrag, workspace, subTab, pane, side) {
-      const drag = resolveDrag(rawDrag)
+      const drag = sameFolder(rawDrag, workspace)
       if (!drag) return
       if (drag.kind === 'pane' && drag.pane === pane) return
       if (drag.kind === 'subtab' && drag.subTab === subTab) return
@@ -371,16 +482,14 @@ export const useStore = create<State>()((set, get) => {
         })),
         activeSubTab: subTab
       }))
-      pruneEmpty(workspace)
     },
 
     moveToSubTab(rawDrag, workspace, index) {
-      const drag = resolveDrag(rawDrag)
+      const drag = sameFolder(rawDrag, workspace)
       const target = get().workspaces.find((w) => w.key === workspace)
       if (!drag || !target || target.kind !== 'folder') return
-      const sameFolder = drag.workspace === workspace
 
-      if (drag.kind === 'subtab' && sameFolder) {
+      if (drag.kind === 'subtab') {
         // Reorder within the tab row.
         const from = target.subTabs.findIndex((s) => s.key === drag.subTab)
         if (from === -1) return
@@ -391,29 +500,62 @@ export const useStore = create<State>()((set, get) => {
         return
       }
 
-      const source = get()
-        .workspaces.find((w) => w.key === drag.workspace)
-        ?.subTabs.find((s) => s.key === drag.subTab)
-      if (!source) return
-      // A lone pane dropped on its own tab row is already a tab of its own.
-      if (drag.kind === 'pane' && sameFolder && leaves(source.layout).length === 1) return
-      const sourceIndex = target.subTabs.indexOf(source) // -1 unless same folder
+      // A pane becomes a tab of its own. A lone pane already is one.
+      const source = target.subTabs.find((s) => s.key === drag.subTab)
+      if (!source || leaves(source.layout).length === 1) return
       const moved = detach(drag)
       if (!moved) return
       updateWorkspace(workspace, (w) => {
         const subTabs = [...w.subTabs]
-        // detach() may have removed the source tab from this row, shifting later indices.
-        const removed = sourceIndex !== -1 && !w.subTabs.some((s) => s.key === source.key)
-        subTabs.splice(removed && index > sourceIndex ? index - 1 : index, 0, moved)
+        subTabs.splice(index, 0, moved)
         return { ...w, subTabs, activeSubTab: moved.key }
       })
-      pruneEmpty(workspace)
+    },
+
+    moveWorkspace(key, index) {
+      set((s) => {
+        // A pair of joined folders moves as one.
+        const moving = new Set(pairOf(s.workspaces, key))
+        const rest = s.workspaces.filter((w) => !moving.has(w.key))
+        let at = s.workspaces.slice(0, index).filter((w) => !moving.has(w.key)).length
+        // Nothing goes between two joined folders.
+        if (at > 0 && rest[at]?.joinedTo === rest[at - 1].key) at++
+        rest.splice(at, 0, ...s.workspaces.filter((w) => moving.has(w.key)))
+        return { workspaces: rest }
+      })
+    },
+
+    joinWorkspace(key, partner) {
+      set((s) => {
+        const ws = s.workspaces.find((w) => w.key === key)
+        const target = partner ? s.workspaces.find((w) => w.key === partner) : null
+        if (ws?.kind !== 'folder') return s
+        if (partner && (target?.kind !== 'folder' || partner === key)) return s
+        // Out of the pair it was in, and the target out of its own.
+        const free = (w: Workspace): boolean =>
+          w.key === key ||
+          w.joinedTo === key ||
+          (!!partner && pairOf(s.workspaces, partner).includes(w.key))
+        let workspaces = s.workspaces.map((w) => (free(w) ? { ...w, joinedTo: null } : w))
+        if (partner) {
+          // Right next to its partner in the tab row.
+          const moved = { ...ws, joinedTo: partner, joinSize: 0.5 }
+          workspaces = workspaces.filter((w) => w.key !== key)
+          workspaces.splice(workspaces.findIndex((w) => w.key === partner) + 1, 0, moved)
+        }
+        return { workspaces, activeWorkspace: key }
+      })
+    },
+
+    resizeJoin(key, size) {
+      const right = pairOf(get().workspaces, key)[1]
+      if (right) updateWorkspace(right, (w) => ({ ...w, joinSize: size }))
     },
 
     removeTerminals(keys) {
       if (keys.length === 0) return
       set((s) => {
-        let workspaces = s.workspaces
+        const workspaces = s.workspaces
           .map((w) => {
             let ws = w
             for (const sub of w.subTabs) {
@@ -432,29 +574,19 @@ export const useStore = create<State>()((set, get) => {
           })
           // A folder with no terminals left closes.
           .filter((w) => w.kind === 'start' || w.subTabs.length > 0)
-        let activeWorkspace = s.activeWorkspace
-        if (!workspaces.some((w) => w.key === activeWorkspace)) {
-          const index = s.workspaces.findIndex((w) => w.key === activeWorkspace)
-          if (workspaces.length === 0) workspaces = [startWorkspace()]
-          activeWorkspace = workspaces[Math.min(index, workspaces.length - 1)].key
-        }
         const terminals = { ...s.terminals }
         for (const key of keys) delete terminals[key]
-        return { workspaces, activeWorkspace, terminals }
+        return { ...afterClosing(s, workspaces), terminals }
       })
     },
 
     removeWorkspace(key) {
       set((s) => {
-        const index = s.workspaces.findIndex((w) => w.key === key)
-        if (index === -1) return s
-        let workspaces = s.workspaces.filter((w) => w.key !== key)
-        if (workspaces.length === 0) workspaces = [startWorkspace()]
-        const activeWorkspace =
-          s.activeWorkspace === key
-            ? workspaces[Math.min(index, workspaces.length - 1)].key
-            : s.activeWorkspace
-        return { workspaces, activeWorkspace }
+        if (!s.workspaces.some((w) => w.key === key)) return s
+        return afterClosing(
+          s,
+          s.workspaces.filter((w) => w.key !== key)
+        )
       })
     },
 
@@ -464,12 +596,27 @@ export const useStore = create<State>()((set, get) => {
 
     setActiveSubTab(workspace, subTab) {
       updateWorkspace(workspace, (w) => ({ ...w, activeSubTab: subTab }))
+      // In a pair this can be the other folder.
+      set({ activeWorkspace: workspace })
     },
 
     focusTerminal(key) {
       const where = locate(get().workspaces, key)
       if (!where) return
       const { workspace, subTab } = where
+      // Looking at it is what it waited for.
+      if (get().terminals[key]?.attention) get().patchTerminal(key, { attention: undefined })
+      if (get().notifications.some((n) => n.key === key && !n.read)) {
+        get().markNotificationsRead(key)
+      }
+      // Clicking into the other folder of a pair makes it the active one.
+      const { workspaces, activeWorkspace } = get()
+      if (
+        workspace.key !== activeWorkspace &&
+        pairOf(workspaces, activeWorkspace).includes(workspace.key)
+      ) {
+        set({ activeWorkspace: workspace.key })
+      }
       if (subTab.activePane === key && workspace.activeSubTab === subTab.key) return
       updateWorkspace(workspace.key, (w) => ({
         ...updateSubTab(w, subTab.key, (s) => ({ ...s, activePane: key })),
@@ -506,6 +653,15 @@ export const useStore = create<State>()((set, get) => {
       })
     },
 
+    updateTerminal(key, change) {
+      const patch: Partial<TerminalState> = {}
+      const name = change.title?.trim().slice(0, MAX_TITLE_LENGTH)
+      if (name) patch.title = name
+      if (change.color !== undefined) patch.color = change.color ?? undefined
+      if (change.muted !== undefined) patch.muted = change.muted || undefined
+      get().patchTerminal(key, patch)
+    },
+
     restartTerminal(key) {
       const t = get().terminals[key]
       if (!t) return
@@ -518,8 +674,62 @@ export const useStore = create<State>()((set, get) => {
         errorCode: undefined,
         exitCode: undefined,
         session: undefined,
-        termTitle: undefined
+        termTitle: undefined,
+        activity: undefined,
+        workingSince: undefined,
+        attention: undefined
       })
+    },
+
+    reportActivity(key, activity, looking) {
+      const t = get().terminals[key]
+      if (!t || t.activity === (activity ?? undefined)) return
+      const patch: Partial<TerminalState> = { activity: activity ?? undefined }
+      let call: Attention | null = null
+      if (activity === 'working') {
+        patch.workingSince = Date.now()
+        patch.attention = undefined
+      } else if (activity === 'asking') {
+        call = 'asking'
+      } else if (activity === 'idle' && t.activity === 'working') {
+        // A blink of work (a slash command, /exit) isn't worth a call.
+        const worked = Date.now() - (t.workingSince ?? Date.now()) >= MIN_WORK_MS
+        if (worked) call = 'finished'
+      }
+      // Answering a prompt (asking → idle) needs no call: you were there.
+      if (activity !== 'working') patch.workingSince = undefined
+      if (call) {
+        // The sound plays even for the session you look at; the marks are for elsewhere.
+        patch.lastCall = { kind: call, at: Date.now() }
+        if (!looking) {
+          patch.attention = call
+          patch.attentionSince = Date.now()
+        }
+      }
+      get().patchTerminal(key, patch)
+    },
+
+    ringBell(key, looking) {
+      const t = get().terminals[key]
+      if (t?.spec.kind !== 'claude' || t.status !== 'running') return
+      const patch: Partial<TerminalState> = { lastCall: { kind: 'asking', at: Date.now() } }
+      if (!looking && !t.attention) {
+        patch.attention = 'asking'
+        patch.attentionSince = Date.now()
+      }
+      get().patchTerminal(key, patch)
+    },
+
+    revealTerminal(key) {
+      const where = locate(get().workspaces, key)
+      if (!where) return
+      updateWorkspace(where.workspace.key, (w) => ({
+        ...updateSubTab(w, where.subTab.key, (s) => ({ ...s, activePane: key })),
+        activeSubTab: where.subTab.key
+      }))
+      set({ activeWorkspace: where.workspace.key })
+      get().patchTerminal(key, { attention: undefined })
+      get().markNotificationsRead(key)
     },
 
     setDrag(drag) {
@@ -536,6 +746,10 @@ export const useStore = create<State>()((set, get) => {
       set({ settings: await window.api.setFolderColor(folder, color) })
     },
 
+    async setFolderTitle(folder, title) {
+      set({ settings: await window.api.setFolderTitle(folder, title) })
+    },
+
     setSettings(settings) {
       set({ settings })
     },
@@ -546,9 +760,75 @@ export const useStore = create<State>()((set, get) => {
 
     setSettingsOpen(open) {
       set({ settingsOpen: open })
+    },
+
+    setTabSettings(target) {
+      set({ tabSettings: target })
+    },
+
+    setGitInfo(cwd, info) {
+      const { gitInfo } = get()
+      const same =
+        cwd in gitInfo &&
+        gitInfo[cwd]?.branch === info?.branch &&
+        gitInfo[cwd]?.dirty === info?.dirty
+      if (!same) set({ gitInfo: { ...gitInfo, [cwd]: info } })
+    },
+
+    notify(n, { toast = true } = {}) {
+      const notification: AppNotification = { ...n, id: newKey('note'), read: false }
+      set((s) => ({
+        notifications: [notification, ...s.notifications].slice(0, MAX_NOTIFICATIONS),
+        toasts: toast ? [...s.toasts, notification.id].slice(-MAX_TOASTS) : s.toasts
+      }))
+    },
+
+    markNotificationsRead(key) {
+      const hit = (n: AppNotification): boolean => key === undefined || n.key === key
+      set((s) => ({
+        notifications: s.notifications.map((n) => (hit(n) && !n.read ? { ...n, read: true } : n)),
+        toasts: s.toasts.filter((id) => !s.notifications.some((n) => n.id === id && hit(n)))
+      }))
+    },
+
+    clearNotifications() {
+      set({ notifications: [], toasts: [] })
+    },
+
+    setDoNotDisturb(on) {
+      set({ doNotDisturb: on, ...(on ? { toasts: [] } : {}) })
+    },
+
+    async setFolderMuted(folder, muted) {
+      set({ settings: await window.api.setFolderMuted(folder, muted) })
+    },
+
+    dismissToast(id) {
+      set((s) => ({ toasts: s.toasts.filter((t) => t !== id) }))
     }
   }
 })
+
+/**
+ * The workspaces left after some closed, with joins to closed folders dropped. When the active
+ * one closed, its partner takes over, or else the tab now in its place.
+ */
+function afterClosing(
+  before: Pick<State, 'workspaces' | 'activeWorkspace'>,
+  remaining: Workspace[]
+): Pick<State, 'workspaces' | 'activeWorkspace'> {
+  const workspaces = remaining.length > 0 ? unjoinMissing(remaining) : [startWorkspace()]
+  const { activeWorkspace } = before
+  if (workspaces.some((w) => w.key === activeWorkspace)) return { workspaces, activeWorkspace }
+  const partner = pairOf(before.workspaces, activeWorkspace).find(
+    (k) => k !== activeWorkspace && workspaces.some((w) => w.key === k)
+  )
+  const index = before.workspaces.findIndex((w) => w.key === activeWorkspace)
+  return {
+    workspaces,
+    activeWorkspace: partner ?? workspaces[Math.min(index, workspaces.length - 1)].key
+  }
+}
 
 function dropSubTab(ws: Workspace, key: string): Workspace {
   const index = ws.subTabs.findIndex((s) => s.key === key)
@@ -558,6 +838,15 @@ function dropSubTab(ws: Workspace, key: string): Workspace {
       ? (subTabs[Math.min(index, subTabs.length - 1)]?.key ?? null)
       : ws.activeSubTab
   return { ...ws, subTabs, activeSubTab }
+}
+
+/** A folder tab's title: the one set in its settings, or else the folder's name. */
+export function workspaceTitle(
+  workspace: Workspace,
+  titles: Record<string, string> | undefined,
+  platform: string
+): string {
+  return (workspace.cwd && findByPath(titles, workspace.cwd, platform)) || workspace.title
 }
 
 /** Folder name of a terminal shown under another folder's tab (after cross-folder docking). */
@@ -570,13 +859,24 @@ export function foreignFolder(
   return folderName(terminal.cwd)
 }
 
-/** Aggregate status shown on a folder or sub-tab: the most attention-worthy wins. */
-export function combinedStatus(states: (TerminalState | undefined)[]): TerminalStatus | 'none' {
-  const present = states.filter((s): s is TerminalState => !!s)
-  for (const status of ['error', 'starting', 'running', 'exited'] as const) {
-    if (present.some((s) => s.status === status)) return status
-  }
-  return 'none'
+/** What a terminal's status dot shows: a running Claude also says what it is doing. */
+export type DotStatus = TerminalStatus | ClaudeActivity
+
+export function dotStatus(t: TerminalState): DotStatus {
+  return t.status === 'running' && t.activity ? t.activity : t.status
+}
+
+/** Aggregate status shown on a folder or sub-tab: what needs you most wins. */
+export function combinedStatus(states: (TerminalState | undefined)[]): DotStatus | 'none' {
+  const present = states.filter((s): s is TerminalState => !!s).map(dotStatus)
+  const order = ['asking', 'error', 'idle', 'working', 'starting', 'running', 'exited'] as const
+  return order.find((status) => present.includes(status)) ?? 'none'
+}
+
+/** The strongest call for attention among these terminals: asking beats finished. */
+export function combinedAttention(states: (TerminalState | undefined)[]): Attention | null {
+  const calls = states.map((s) => s?.attention)
+  return calls.includes('asking') ? 'asking' : calls.includes('finished') ? 'finished' : null
 }
 
 /** How to start a terminal again: a Claude tab resumes its conversation if it has one. */
@@ -600,6 +900,8 @@ export function restoredState(
       cwd: t.cwd,
       spec,
       title: t.title,
+      ...(t.color ? { color: t.color } : {}),
+      ...(t.muted ? { muted: true } : {}),
       status: 'starting',
       attempt: 1,
       claudeSessionId: spec.kind === 'claude' ? (spec.resumeId ?? spec.sessionId) : undefined
@@ -623,8 +925,14 @@ export function restoredState(
       title: folderName(w.cwd),
       subTabs,
       activeSubTab: (subTabs[w.activeSubTab] ?? subTabs[0]).key,
-      claudeCount: w.claudeCount
+      claudeCount: w.claudeCount,
+      joinedTo: null,
+      joinSize: w.joinSize ?? 0.5
     }
+  })
+  // Pairs are saved by position; main has already checked each folder is in one pair at most.
+  saved.workspaces.forEach((w, i) => {
+    if (w.joinedTo !== undefined) workspaces[i].joinedTo = workspaces[w.joinedTo]?.key ?? null
   })
   return {
     workspaces,
@@ -643,21 +951,27 @@ export function snapshot(
   return {
     version: 1,
     activeWorkspace: Math.max(0, activeIndex),
-    workspaces: folders.map((w) => ({
-      cwd: w.cwd!,
-      claudeCount: w.claudeCount,
-      activeSubTab: Math.max(
-        0,
-        w.subTabs.findIndex((s) => s.key === w.activeSubTab)
-      ),
-      subTabs: w.subTabs.map((s) => ({ layout: s.layout, activePane: s.activePane }))
-    })),
+    workspaces: folders.map((w) => {
+      const partner = w.joinedTo ? folders.findIndex((f) => f.key === w.joinedTo) : -1
+      return {
+        cwd: w.cwd!,
+        claudeCount: w.claudeCount,
+        activeSubTab: Math.max(
+          0,
+          w.subTabs.findIndex((s) => s.key === w.activeSubTab)
+        ),
+        subTabs: w.subTabs.map((s) => ({ layout: s.layout, activePane: s.activePane })),
+        ...(partner !== -1 ? { joinedTo: partner, joinSize: w.joinSize } : {})
+      }
+    }),
     terminals: Object.values(state.terminals)
       .filter((t) => used.has(t.key))
       .map((t) => ({
         key: t.key,
         cwd: t.cwd,
         title: t.title,
+        ...(t.color ? { color: t.color } : {}),
+        ...(t.muted ? { muted: true } : {}),
         spec: t.spec,
         ...(t.claudeSessionId ? { claudeSessionId: t.claudeSessionId } : {}),
         ...(t.status === 'running' && t.session && t.startedAt

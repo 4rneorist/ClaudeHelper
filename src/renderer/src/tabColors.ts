@@ -1,7 +1,8 @@
-import { samePath } from '../../shared/paths'
+import { findByPath } from '../../shared/paths'
 
 /**
- * The swatches offered for folder tabs; any other #rrggbb can be picked as a custom color.
+ * The swatches offered for folder and session tabs; any other #rrggbb can be picked as a custom
+ * color.
  * All dark enough for a white title on the active tab.
  */
 export const TAB_COLORS = [
@@ -17,8 +18,13 @@ export const TAB_COLORS = [
   { name: 'Gray', value: '#64748b' }
 ] as const
 
-/** The tab bar's background (--bg-elev in main.css), which inactive colored tabs blend into. */
-const TAB_BAR = { dark: '#242428', light: '#f1f1ef' }
+/** Backgrounds of the bars tabs sit on (main.css), which inactive colored tabs blend into. */
+const BARS = {
+  /** Folder tabs: .tabbar, --bg-elev. */
+  folder: { dark: '#242428', light: '#f1f1ef' },
+  /** Session tabs: .subtabbar, --term-bg in dark and --bg in light. */
+  session: { dark: '#161618', light: '#fbfbfa' }
+}
 /** How much of the folder's own color an inactive tab shows. */
 const INACTIVE_SHARE = 0.55
 
@@ -27,9 +33,7 @@ export function findFolderColor(
   cwd: string,
   platform: string
 ): string | null {
-  if (!colors) return null
-  const hit = Object.keys(colors).find((folder) => samePath(folder, cwd, platform))
-  return hit ? colors[hit] : null
+  return findByPath(colors, cwd, platform)
 }
 
 function rgb(hex: string): [number, number, number] {
@@ -62,13 +66,14 @@ export function readableTextColor(background: string): string {
     : '#ffffff'
 }
 
-/** Background and title color of a folder tab with a color of its own. */
+/** Background and title color of a folder or session tab with a color of its own. */
 export function tabColors(
   color: string,
   theme: 'dark' | 'light',
-  active: boolean
+  active: boolean,
+  kind: keyof typeof BARS = 'folder'
 ): { background: string; text: string } {
-  const bar = rgb(TAB_BAR[theme])
+  const bar = rgb(BARS[kind][theme])
   const background = active
     ? color
     : toHex(rgb(color).map((c, i) => c * INACTIVE_SHARE + bar[i] * (1 - INACTIVE_SHARE)))

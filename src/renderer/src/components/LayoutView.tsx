@@ -1,9 +1,11 @@
-import { Fragment, useRef, useState } from 'react'
-import { closeTerminal } from '../actions'
+import { Fragment, useContext, useRef, useState } from 'react'
+import { closeTerminal, tabAnchor, toggleTabSettings } from '../actions'
 import { dragDivider, leaves, sideAt, type Dir, type LayoutNode, type Side } from '../layout'
-import { foreignFolder, useStore, type SubTab, type Workspace } from '../store'
-import { endDrag, startDrag } from '../dnd'
+import { dotStatus, foreignFolder, useStore, type SubTab, type Workspace } from '../store'
+import { endDrag, fromFolder, startDrag } from '../dnd'
+import { tabColors } from '../tabColors'
 import { getTerminal } from '../terminal/TerminalSession'
+import { ThemeContext } from '../themeContext'
 import { TerminalView } from './TerminalView'
 
 /** Smallest pane, in pixels, when dragging a divider. */
@@ -135,16 +137,18 @@ function PaneView({
   const drag = useStore((s) => s.drag)
   const focusTerminal = useStore((s) => s.focusTerminal)
   const platform = useStore((s) => s.appInfo?.platform ?? '')
+  const theme = useContext(ThemeContext)
   const active = ctx.subTab.activePane === terminalKey
   if (!terminal) return null
   const otherFolder = foreignFolder(terminal, ctx.workspace, platform)
+  // The pane header sits on the same background as the folder tab bar.
+  const colors = terminal.color ? tabColors(terminal.color, theme, active, 'folder') : null
 
-  // Docking target for any pane, sub-tab or folder tab, except onto itself.
+  // Docking target for a pane or sub-tab of this folder, except onto itself.
   const canDrop =
-    !!drag &&
-    !(drag.kind === 'pane' && drag.pane === terminalKey) &&
-    !(drag.kind === 'subtab' && drag.subTab === ctx.subTab.key) &&
-    !(drag.kind === 'workspace' && drag.workspace === ctx.workspace.key)
+    fromFolder(drag, ctx.workspace.key) &&
+    !(drag?.kind === 'pane' && drag.pane === terminalKey) &&
+    !(drag?.kind === 'subtab' && drag.subTab === ctx.subTab.key)
 
   return (
     <div
@@ -158,7 +162,8 @@ function PaneView({
     >
       {ctx.multi && (
         <div
-          className="pane-header"
+          className={`pane-header ${colors ? 'colored' : ''}`}
+          style={colors ? { backgroundColor: colors.background, color: colors.text } : undefined}
           draggable
           title="Drag onto another pane to re-dock, or onto the tab row to make it a tab"
           onDragStart={(e) =>
@@ -170,8 +175,16 @@ function PaneView({
             })
           }
           onDragEnd={endDrag}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            toggleTabSettings({
+              kind: 'terminal',
+              terminal: terminalKey,
+              anchor: e.currentTarget.getBoundingClientRect()
+            })
+          }}
         >
-          <span className={`status-dot ${terminal.status}`} />
+          <span className={`status-dot ${dotStatus(terminal)}`} />
           <span className="pane-title">{terminal.title}</span>
           {otherFolder && (
             <span className="pane-folder" title={terminal.cwd}>
@@ -179,6 +192,21 @@ function PaneView({
             </span>
           )}
           {terminal.termTitle && <span className="pane-subtitle">{terminal.termTitle}</span>}
+          <button
+            className="pane-close pane-settings"
+            aria-label={`Settings for ${terminal.title}`}
+            title="Title and color"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) =>
+              toggleTabSettings({
+                kind: 'terminal',
+                terminal: terminalKey,
+                anchor: tabAnchor(e, '.pane-header')
+              })
+            }
+          >
+            ⚙
+          </button>
           <button
             className="pane-close"
             aria-label={`Close ${terminal.title}`}

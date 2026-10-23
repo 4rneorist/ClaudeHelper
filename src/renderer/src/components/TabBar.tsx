@@ -1,13 +1,24 @@
-import { useCallback, useContext, useRef, useState } from 'react'
-import { closeWorkspace } from '../actions'
+import { Fragment, useContext, useState } from 'react'
+import { closeWorkspace, tabAnchor, toggleTabSettings } from '../actions'
 import { endDrag, startDrag } from '../dnd'
 import { leaves } from '../layout'
-import { combinedStatus, useStore, type Workspace } from '../store'
+import {
+  combinedAttention,
+  combinedStatus,
+  pairOf,
+  useStore,
+  workspaceTitle,
+  type Workspace
+} from '../store'
 import { findFolderColor, tabColors } from '../tabColors'
 import { ThemeContext } from '../themeContext'
-import { FolderColorPicker } from './FolderColorPicker'
+import { BellIcon, NotificationBell } from './Notifications'
+import { isFolderMuted } from '../waiting'
 
 const STATUS_LABELS: Record<string, string> = {
+  asking: 'Needs your answer',
+  idle: 'Idle',
+  working: 'Working',
   running: 'Running',
   starting: 'Starting',
   exited: 'Exited',
@@ -15,19 +26,10 @@ const STATUS_LABELS: Record<string, string> = {
   none: 'Not started'
 }
 
-/** Hovering a dragged item over a folder tab for this long opens that folder, to drop into it. */
-const HOVER_SWITCH_MS = 500
-
 function fileManagerName(platform: string): string {
   if (platform === 'win32') return 'File Explorer'
   if (platform === 'darwin') return 'Finder'
   return 'file manager'
-}
-
-interface PickerTarget {
-  folder: string
-  title: string
-  anchor: DOMRect
 }
 
 /** Top row: one tab per folder (or start screen). */
@@ -38,138 +40,173 @@ export function TabBar(): React.JSX.Element {
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const folderColors = useStore((s) => s.settings?.folderColors)
   const platform = useStore((s) => s.appInfo?.platform ?? '')
-  const [picker, setPicker] = useState<PickerTarget | null>(null)
-  const closePicker = useCallback(() => setPicker(null), [])
+  const shown = pairOf(workspaces, activeWorkspace)
 
   return (
-    <>
-      <div className="tabbar" role="tablist" aria-label="Folders">
-        <div className="tabs">
-          {workspaces.map((ws) => (
+    <div className="tabbar" role="tablist" aria-label="Folders">
+      <div className="tabs">
+        {workspaces.map((ws, i) => (
+          <Fragment key={ws.key}>
+            {ws.joinedTo && (
+              <span className="pair-link" title="Joined: shown side by side" aria-hidden="true">
+                ⇆
+              </span>
+            )}
             <WorkspaceTab
-              key={ws.key}
               ws={ws}
+              index={i}
               active={ws.key === activeWorkspace}
+              partner={ws.key !== activeWorkspace && shown.includes(ws.key)}
               color={ws.cwd ? findFolderColor(folderColors, ws.cwd, platform) : null}
               fileManager={fileManagerName(platform)}
-              onPickColor={(anchor) => {
-                if (ws.cwd) setPicker({ folder: ws.cwd, title: ws.title, anchor })
-              }}
             />
-          ))}
-          <button
-            className="tab-new"
-            aria-label="New folder tab"
-            title="Open another folder"
-            onClick={newStartWorkspace}
-          >
-            +
-          </button>
-        </div>
+          </Fragment>
+        ))}
         <button
-          className="icon-button"
-          aria-label="Settings"
-          title="Settings"
-          onClick={() => setSettingsOpen(true)}
+          className="tab-new"
+          aria-label="New folder tab"
+          title="Open another folder"
+          onClick={newStartWorkspace}
         >
-          ⚙
+          +
         </button>
       </div>
-      {picker && (
-        <FolderColorPicker
-          {...picker}
-          current={findFolderColor(folderColors, picker.folder, platform)}
-          onClose={closePicker}
-        />
-      )}
-    </>
+      <NotificationBell />
+      <button
+        className="icon-button"
+        aria-label="Settings"
+        title="Settings"
+        onClick={() => setSettingsOpen(true)}
+      >
+        ⚙
+      </button>
+    </div>
   )
 }
 
 interface WorkspaceTabProps {
   ws: Workspace
+  index: number
   active: boolean
+  /** Shown next to the active folder, joined to it. */
+  partner: boolean
   /** The folder's own color, if it has one. */
   color: string | null
   fileManager: string
-  onPickColor(anchor: DOMRect): void
 }
 
 function WorkspaceTab({
   ws,
+  index,
   active,
+  partner,
   color,
-  fileManager,
-  onPickColor
+  fileManager
 }: WorkspaceTabProps): React.JSX.Element {
   const theme = useContext(ThemeContext)
   const terminals = useStore((s) => s.terminals)
   const drag = useStore((s) => s.drag)
+  const title = useStore((s) =>
+    workspaceTitle(ws, s.settings?.folderTitles, s.appInfo?.platform ?? '')
+  )
   const setActiveWorkspace = useStore((s) => s.setActiveWorkspace)
-  const moveToSubTab = useStore((s) => s.moveToSubTab)
-  const [dropHover, setDropHover] = useState(false)
-  const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const moveWorkspace = useStore((s) => s.moveWorkspace)
+  const [insert, setInsert] = useState<'before' | 'after' | null>(null)
+  const git = useStore((s) => (ws.cwd ? s.gitInfo[ws.cwd] : null))
+  const muted = useStore((s) => (ws.cwd ? isFolderMuted(s, ws.cwd) : false))
 
   const keys = ws.subTabs.flatMap((s) => leaves(s.layout))
   const status = combinedStatus(keys.map((k) => terminals[k]))
+  const attention = combinedAttention(keys.map((k) => terminals[k]))
   const label = STATUS_LABELS[status]
   const isFolder = ws.kind === 'folder'
-  // Dropping on a folder tab adds the dragged terminal(s) to that folder as a new tab.
-  const canDrop = !!drag && isFolder && !(drag.kind === 'workspace' && drag.workspace === ws.key)
+  // Folder tabs only take other folder tabs, to reorder them.
+  const canDrop = drag?.kind === 'workspace' && drag.workspace !== ws.key
   const colors = isFolder && color ? tabColors(color, theme, active) : null
   const cwd = isFolder ? ws.cwd : null
+
+  const sideOf = (e: React.DragEvent): 'before' | 'after' => {
+    const r = e.currentTarget.getBoundingClientRect()
+    return e.clientX < r.left + r.width / 2 ? 'before' : 'after'
+  }
+  const openSettings = (anchor: DOMRect): void =>
+    toggleTabSettings({ kind: 'folder', workspace: ws.key, anchor })
 
   return (
     <div
       role="tab"
       aria-selected={active}
-      className={`tab ${active ? 'active' : ''} ${dropHover ? 'drop-target' : ''} ${colors ? 'colored' : ''}`}
+      className={`tab ${active ? 'active' : ''} ${partner ? 'partner' : ''} ${insert ? `insert-${insert}` : ''} ${colors ? 'colored' : ''} ${attention ? `attention-${attention}` : ''}`}
       style={colors ? { backgroundColor: colors.background, color: colors.text } : undefined}
       title={
         ws.cwd
-          ? `${ws.cwd}\n${keys.length} terminal${keys.length === 1 ? '' : 's'}\nDrag onto a pane of another folder to split with it\nRight-click to set its color`
+          ? [
+              ws.cwd,
+              git && `Branch ${git.branch}${git.dirty ? ', with uncommitted changes' : ''}`,
+              `${keys.length} terminal${keys.length === 1 ? '' : 's'} · ${label}`,
+              'Drag to reorder. ⚙ or right-click: title and color'
+            ]
+              .filter(Boolean)
+              .join('\n')
           : label
       }
       onContextMenu={(e) => {
         if (!cwd) return
         e.preventDefault()
-        onPickColor(e.currentTarget.getBoundingClientRect())
+        openSettings(e.currentTarget.getBoundingClientRect())
       }}
-      draggable={isFolder}
+      draggable
       onDragStart={(e) => startDrag(e, { kind: 'workspace', workspace: ws.key })}
       onDragEnd={endDrag}
-      onDragEnter={() => {
-        if (!drag || active || (drag.kind === 'workspace' && drag.workspace === ws.key)) return
-        clearTimeout(hoverTimer.current)
-        hoverTimer.current = setTimeout(() => setActiveWorkspace(ws.key), HOVER_SWITCH_MS)
-      }}
       onDragOver={(e) => {
         if (!canDrop) return
         e.preventDefault()
         e.dataTransfer.dropEffect = 'move'
-        setDropHover(true)
+        setInsert(sideOf(e))
       }}
-      onDragLeave={() => {
-        clearTimeout(hoverTimer.current)
-        setDropHover(false)
-      }}
+      onDragLeave={() => setInsert(null)}
       onDrop={(e) => {
-        clearTimeout(hoverTimer.current)
-        setDropHover(false)
-        if (!canDrop || !drag) return
+        setInsert(null)
+        if (!canDrop || drag?.kind !== 'workspace') return
         e.preventDefault()
-        moveToSubTab(drag, ws.key, ws.subTabs.length)
+        moveWorkspace(drag.workspace, sideOf(e) === 'before' ? index : index + 1)
         endDrag()
       }}
       onClick={() => setActiveWorkspace(ws.key)}
       onAuxClick={(e) => e.button === 1 && void closeWorkspace(ws.key)}
     >
       <span className={`status-dot ${status}`} aria-label={label} />
-      <span className="tab-title">{ws.title}</span>
+      <span className="tab-title">{title}</span>
+      {git && (
+        <span className="tab-branch">
+          {git.branch}
+          {git.dirty && '*'}
+        </span>
+      )}
+      {muted && (
+        <span className="tab-muted" title="Muted: no sounds, toasts or notifications">
+          <BellIcon off size={12} />
+        </span>
+      )}
       {cwd && (
         <button
-          className="tab-action"
-          aria-label={`Open ${ws.title} in ${fileManager}`}
+          className="tab-action tab-extra"
+          aria-label={`Settings for ${title}`}
+          title="Title and color"
+          // Keeps an open popover from closing on mousedown, so the click toggles it.
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            openSettings(tabAnchor(e, '.tab'))
+          }}
+        >
+          ⚙
+        </button>
+      )}
+      {cwd && (
+        <button
+          className="tab-action tab-extra"
+          aria-label={`Open ${title} in ${fileManager}`}
           title={`Open in ${fileManager}`}
           onClick={(e) => {
             e.stopPropagation()
@@ -192,7 +229,7 @@ function WorkspaceTab({
       )}
       <button
         className="tab-close"
-        aria-label={`Close ${ws.title}`}
+        aria-label={`Close ${title}`}
         onClick={(e) => {
           e.stopPropagation()
           void closeWorkspace(ws.key)

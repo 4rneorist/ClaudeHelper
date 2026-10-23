@@ -1,10 +1,12 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import path from 'path'
-import { HEX_COLOR, THEME_SETTINGS, type Settings } from '../shared/ipc'
+import { HEX_COLOR, SOUND_NAMES, THEME_SETTINGS, type Settings } from '../shared/ipc'
+import { MAX_TITLE_LENGTH } from '../shared/uiState'
 
 export const MAX_RECENT = 15
 export const MIN_FONT_SIZE = 8
 export const MAX_FONT_SIZE = 32
+export const MAX_REMINDER_MINUTES = 60
 
 export const DEFAULT_SETTINGS: Settings = {
   claudePath: '',
@@ -12,8 +14,16 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   experimentalConptyDll: false,
   restoreSession: true,
+  notifyWhenWaiting: true,
+  soundOnAttention: true,
+  finishedSound: 'chime',
+  askingSound: 'rise',
+  soundVolume: 70,
+  reminderMinutes: 5,
+  mutedFolders: [],
   recentFolders: [],
-  folderColors: {}
+  folderColors: {},
+  folderTitles: {}
 }
 
 function samePath(a: string, b: string, platform: NodeJS.Platform): boolean {
@@ -21,12 +31,18 @@ function samePath(a: string, b: string, platform: NodeJS.Platform): boolean {
   return platform === 'linux' ? a === b : a.toLowerCase() === b.toLowerCase()
 }
 
+function cleanTitle(title: string): string {
+  return title.trim().slice(0, MAX_TITLE_LENGTH)
+}
+
 /** Keeps only valid fields from untrusted input (a settings file or an IPC payload). */
 export function sanitizeSettings(input: unknown, base: Settings = DEFAULT_SETTINGS): Settings {
   const out: Settings = {
     ...base,
     recentFolders: [...base.recentFolders],
-    folderColors: { ...base.folderColors }
+    folderColors: { ...base.folderColors },
+    folderTitles: { ...base.folderTitles },
+    mutedFolders: [...base.mutedFolders]
   }
   if (!input || typeof input !== 'object') return out
   const raw = input as Record<string, unknown>
@@ -40,6 +56,28 @@ export function sanitizeSettings(input: unknown, base: Settings = DEFAULT_SETTIN
   if (typeof raw.experimentalConptyDll === 'boolean')
     out.experimentalConptyDll = raw.experimentalConptyDll
   if (typeof raw.restoreSession === 'boolean') out.restoreSession = raw.restoreSession
+  if (typeof raw.notifyWhenWaiting === 'boolean') out.notifyWhenWaiting = raw.notifyWhenWaiting
+  if (typeof raw.soundOnAttention === 'boolean') out.soundOnAttention = raw.soundOnAttention
+  for (const key of ['finishedSound', 'askingSound'] as const) {
+    const name = raw[key]
+    if (typeof name === 'string' && (SOUND_NAMES as readonly string[]).includes(name)) {
+      out[key] = name as Settings[typeof key]
+    }
+  }
+  if (typeof raw.soundVolume === 'number' && Number.isFinite(raw.soundVolume)) {
+    out.soundVolume = Math.min(100, Math.max(0, Math.round(raw.soundVolume)))
+  }
+  if (typeof raw.reminderMinutes === 'number' && Number.isFinite(raw.reminderMinutes)) {
+    out.reminderMinutes = Math.min(
+      MAX_REMINDER_MINUTES,
+      Math.max(0, Math.round(raw.reminderMinutes))
+    )
+  }
+  if (Array.isArray(raw.mutedFolders)) {
+    out.mutedFolders = raw.mutedFolders.filter(
+      (f): f is string => typeof f === 'string' && f !== ''
+    )
+  }
   if (Array.isArray(raw.recentFolders)) {
     out.recentFolders = raw.recentFolders
       .filter((f): f is string => typeof f === 'string' && f.length > 0)
@@ -51,6 +89,13 @@ export function sanitizeSettings(input: unknown, base: Settings = DEFAULT_SETTIN
       if (folder && typeof color === 'string' && HEX_COLOR.test(color)) {
         out.folderColors[folder] = color.toLowerCase()
       }
+    }
+  }
+  if (raw.folderTitles && typeof raw.folderTitles === 'object') {
+    out.folderTitles = {}
+    for (const [folder, title] of Object.entries(raw.folderTitles)) {
+      const clean = typeof title === 'string' ? cleanTitle(title) : ''
+      if (folder && clean) out.folderTitles[folder] = clean
     }
   }
   return out
@@ -70,17 +115,25 @@ export class SettingsStore {
     return {
       ...this.settings,
       recentFolders: [...this.settings.recentFolders],
-      folderColors: { ...this.settings.folderColors }
+      folderColors: { ...this.settings.folderColors },
+      folderTitles: { ...this.settings.folderTitles },
+      mutedFolders: [...this.settings.mutedFolders]
     }
   }
 
   /**
-   * Recent folders and folder colors are managed through their own methods, not patched
-   * wholesale.
+   * Recent folders and per-folder colors, titles and muting are managed through their own
+   * methods, not patched wholesale.
    */
   update(patch: unknown): Settings {
-    const { recentFolders, folderColors } = this.settings
-    this.settings = { ...sanitizeSettings(patch, this.settings), recentFolders, folderColors }
+    const { recentFolders, folderColors, folderTitles, mutedFolders } = this.settings
+    this.settings = {
+      ...sanitizeSettings(patch, this.settings),
+      recentFolders,
+      folderColors,
+      folderTitles,
+      mutedFolders
+    }
     this.save()
     return this.get()
   }
@@ -95,6 +148,27 @@ export class SettingsStore {
     )
     if (color !== null) folderColors[folder] = color.toLowerCase()
     this.settings.folderColors = folderColors
+    this.save()
+    return this.get()
+  }
+
+  /** null or a blank title goes back to the folder's name. */
+  setFolderTitle(folder: string, title: string | null): Settings {
+    const clean = title === null ? '' : cleanTitle(title)
+    const folderTitles = Object.fromEntries(
+      Object.entries(this.settings.folderTitles).filter(
+        ([f]) => !samePath(f, folder, this.platform)
+      )
+    )
+    if (clean) folderTitles[folder] = clean
+    this.settings.folderTitles = folderTitles
+    this.save()
+    return this.get()
+  }
+
+  setFolderMuted(folder: string, muted: boolean): Settings {
+    const rest = this.settings.mutedFolders.filter((f) => !samePath(f, folder, this.platform))
+    this.settings.mutedFolders = muted ? [...rest, folder] : rest
     this.save()
     return this.get()
   }

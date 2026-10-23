@@ -1,17 +1,21 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import path from 'path'
-import type {
-  LayoutNode,
-  SavedSubTab,
-  SavedTerminal,
-  SavedWorkspace,
-  UiState
+import { HEX_COLOR } from '../shared/ipc'
+import {
+  MAX_TITLE_LENGTH,
+  MIN_JOIN_SIZE,
+  type LayoutNode,
+  type SavedSubTab,
+  type SavedTerminal,
+  type SavedWorkspace,
+  type UiState
 } from '../shared/uiState'
 import { matchRunningSessions, readRunningSessions, SESSION_ID } from './claudeSessions'
 import { checkSpec } from './validation'
 
 const MAX_TERMINALS = 64
 const MAX_DEPTH = 8
+const MAX_JOIN_SIZE = 1 - MIN_JOIN_SIZE
 
 const isAbsolutePath = (p: unknown): p is string =>
   typeof p === 'string' && p.length > 0 && path.isAbsolute(p)
@@ -71,9 +75,13 @@ export function sanitizeUiState(input: unknown, keepRuntime = false): UiState | 
       key: r.key,
       cwd: r.cwd,
       title:
-        typeof r.title === 'string' && r.title.trim() ? r.title.trim().slice(0, 80) : 'Terminal',
+        typeof r.title === 'string' && r.title.trim()
+          ? r.title.trim().slice(0, MAX_TITLE_LENGTH)
+          : 'Terminal',
       spec
     }
+    if (typeof r.color === 'string' && HEX_COLOR.test(r.color)) saved.color = r.color.toLowerCase()
+    if (r.muted === true) saved.muted = true
     if (typeof r.claudeSessionId === 'string' && SESSION_ID.test(r.claudeSessionId)) {
       saved.claudeSessionId = r.claudeSessionId
     }
@@ -87,7 +95,9 @@ export function sanitizeUiState(input: unknown, keepRuntime = false): UiState | 
   const known = new Set(terminals.keys())
   const used = new Set<string>()
   const workspaces: SavedWorkspace[] = []
-  for (const w of raw.workspaces) {
+  /** Where each kept workspace was in the input, which pairs refer to. */
+  const kept: number[] = []
+  for (const [index, w] of raw.workspaces.entries()) {
     if (!w || typeof w !== 'object') continue
     const r = w as Record<string, unknown>
     if (!isAbsolutePath(r.cwd) || !Array.isArray(r.subTabs)) continue
@@ -112,8 +122,23 @@ export function sanitizeUiState(input: unknown, keepRuntime = false): UiState | 
       subTabs,
       activeSubTab: Math.min(Math.max(activeSubTab, 0), subTabs.length - 1)
     })
+    kept.push(index)
   }
   if (workspaces.length === 0) return null
+
+  // Joined folders: each folder in one pair at most, with another folder that was kept.
+  const paired = new Set<number>()
+  for (const [i, w] of workspaces.entries()) {
+    const r = raw.workspaces[kept[i]] as Record<string, unknown>
+    const partner = typeof r.joinedTo === 'number' ? kept.indexOf(r.joinedTo) : -1
+    if (partner === -1 || partner === i || paired.has(i) || paired.has(partner)) continue
+    paired.add(i).add(partner)
+    w.joinedTo = partner
+    w.joinSize =
+      typeof r.joinSize === 'number' && Number.isFinite(r.joinSize)
+        ? Math.min(MAX_JOIN_SIZE, Math.max(MIN_JOIN_SIZE, r.joinSize))
+        : 0.5
+  }
 
   const activeWorkspace =
     typeof raw.activeWorkspace === 'number' ? Math.floor(raw.activeWorkspace) : 0
@@ -212,6 +237,8 @@ export class UiStateStore {
           title: t.title,
           spec: t.spec
         }
+        if (t.color) persistedTerminal.color = t.color
+        if (t.muted) persistedTerminal.muted = true
         const id = ids[t.key] ?? t.claudeSessionId
         if (id) persistedTerminal.claudeSessionId = id
         return persistedTerminal

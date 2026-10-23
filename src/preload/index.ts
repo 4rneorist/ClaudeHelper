@@ -23,6 +23,8 @@ const api: ClaudeHelperApi = {
   updateSettings: (patch) => ipcRenderer.invoke(IPC.settingsUpdate, patch),
   removeRecent: (folder) => ipcRenderer.invoke(IPC.recentRemove, folder),
   setFolderColor: (folder, color) => ipcRenderer.invoke(IPC.folderColorSet, folder, color),
+  setFolderTitle: (folder, title) => ipcRenderer.invoke(IPC.folderTitleSet, folder, title),
+  setFolderMuted: (folder, muted) => ipcRenderer.invoke(IPC.folderMutedSet, folder, muted),
   openFolder: (folder) => ipcRenderer.send(IPC.openFolder, folder),
   claudeStatus: () => ipcRenderer.invoke(IPC.claudeStatus),
   pickFolder: () => ipcRenderer.invoke(IPC.pickFolder),
@@ -37,7 +39,11 @@ const api: ClaudeHelperApi = {
   listPastSessions: (cwd, limit) => ipcRenderer.invoke(IPC.pastSessions, cwd, limit),
   loadUiState: () => ipcRenderer.invoke(IPC.uiLoad),
   saveUiState: (state) => ipcRenderer.invoke(IPC.uiSave, state),
-  onUiFlushRequest: (listener) => subscribe(IPC.uiFlushRequest, listener)
+  onUiFlushRequest: (listener) => subscribe(IPC.uiFlushRequest, listener),
+  notifyAttention: (req) => ipcRenderer.send(IPC.attentionNotify, req),
+  setAttentionSummary: (summary) => ipcRenderer.send(IPC.attentionSummary, summary),
+  onAttentionFocus: (listener) => subscribe(IPC.attentionFocus, listener),
+  gitInfo: (folder) => ipcRenderer.invoke(IPC.gitInfo, folder)
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { LaunchMode, PastSession, TerminalSpec } from '../../../shared/ipc'
-import { folderName } from '../../../shared/paths'
+import { findByPath, folderName } from '../../../shared/paths'
 import { formatAgo, INSTALL_HINTS, MODE_LABELS } from '../constants'
 import { useStore, type Workspace } from '../store'
 
@@ -121,6 +121,11 @@ function RecentFolder({
   onOpen(folder: string, spec?: TerminalSpec, title?: string): void
 }): React.JSX.Element {
   const setSettings = useStore((s) => s.setSettings)
+  // The title given in the folder tab's settings, if any.
+  const name = useStore(
+    (s) =>
+      findByPath(s.settings?.folderTitles, folder, s.appInfo?.platform ?? '') ?? folderName(folder)
+  )
   const [expanded, setExpanded] = useState(false)
   const [sessions, setSessions] = useState<PastSession[] | null>(null)
 
@@ -144,14 +149,14 @@ function RecentFolder({
           className={`recent-toggle ${expanded ? 'expanded' : ''}`}
           aria-expanded={expanded}
           aria-controls={listId}
-          aria-label={`${expanded ? 'Hide' : 'Show'} recent sessions in ${folderName(folder)}`}
+          aria-label={`${expanded ? 'Hide' : 'Show'} recent sessions in ${name}`}
           title={expanded ? 'Hide recent sessions' : 'Show recent sessions'}
           onClick={() => setExpanded((x) => !x)}
         >
           ›
         </button>
         <button className="recent-open" title={folder} onClick={() => onOpen(folder)}>
-          <span className="recent-name">{folderName(folder)}</span>
+          <span className="recent-name">{name}</span>
           <span className="recent-path">{folder}</span>
         </button>
         <button
@@ -164,11 +169,7 @@ function RecentFolder({
         </button>
       </div>
       {expanded && (
-        <ul
-          className="sessions"
-          id={listId}
-          aria-label={`Recent sessions in ${folderName(folder)}`}
-        >
+        <ul className="sessions" id={listId} aria-label={`Recent sessions in ${name}`}>
           {sessions === null && <li className="sessions-note muted">Loading…</li>}
           {sessions?.length === 0 && <li className="sessions-note muted">No previous sessions</li>}
           {sessions?.map((s) => (

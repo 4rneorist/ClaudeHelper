@@ -1,0 +1,45 @@
+appId: com.claudehelper.app
+productName: ClaudeHelper
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!tests/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{vitest.config.mts,playwright.config.ts}'
+  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+asarUnpack:
+  - resources/**
+  # node-pty loads native binaries, conpty.dll/OpenConsole.exe and a worker script from disk.
+  - node_modules/node-pty/**
+# node-pty ships N-API prebuilds (Windows/macOS) or compiles at npm install (Linux); its ABI does
+# not depend on the Electron version, so no electron-rebuild step.
+npmRebuild: false
+win:
+  executableName: claude-helper
+  target:
+    - nsis
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+mac:
+  entitlementsInherit: build/entitlements.mac.plist
+  category: public.app-category.developer-tools
+  notarize: false
+  target:
+    - dmg
+dmg:
+  artifactName: ${name}-${version}.${ext}
+linux:
+  target:
+    - AppImage
+    - deb
+  maintainer: Vasyl Kravinskyi
+  category: Development
+appImage:
+  artifactName: ${name}-${version}.${ext}

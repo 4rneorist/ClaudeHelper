@@ -118,6 +118,7 @@ interface State {
   restartTerminal(key: string): void
   setDrag(drag: DragPayload | null): void
   updateSettings(patch: Partial<Settings>): Promise<void>
+  setFolderColor(folder: string, color: string | null): Promise<void>
   setSettings(settings: Settings): void
   refreshClaude(): Promise<void>
   setSettingsOpen(open: boolean): void
@@ -529,6 +530,10 @@ export const useStore = create<State>()((set, get) => {
       const settings = await window.api.updateSettings(patch)
       set({ settings })
       if ('claudePath' in patch) await get().refreshClaude()
+    },
+
+    async setFolderColor(folder, color) {
+      set({ settings: await window.api.setFolderColor(folder, color) })
     },
 
     setSettings(settings) {

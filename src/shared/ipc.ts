@@ -22,7 +22,12 @@ export interface Settings {
   /** Reopen the folders, tabs, splits and Claude conversations that were open at last exit. */
   restoreSession: boolean
   recentFolders: string[]
+  /** Folder tab background per folder path, as #rrggbb. */
+  folderColors: Record<string, string>
 }
+
+/** The only color format a folder tab accepts; it ends up in a style attribute. */
+export const HEX_COLOR = /^#[0-9a-f]{6}$/i
 
 export type TerminalKind = 'claude' | 'shell'
 
@@ -113,6 +118,8 @@ export const IPC = {
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
   recentRemove: 'recent:remove',
+  folderColorSet: 'folder:setColor',
+  openFolder: 'app:openFolder',
   claudeStatus: 'claude:status',
   pickFolder: 'dialog:pickFolder',
   pickExecutable: 'dialog:pickExecutable',
@@ -141,6 +148,10 @@ export interface ClaudeHelperApi {
   getSettings(): Promise<Settings>
   updateSettings(patch: Partial<Settings>): Promise<Settings>
   removeRecent(folder: string): Promise<Settings>
+  /** Sets a folder's tab color (#rrggbb), or clears it with null. */
+  setFolderColor(folder: string, color: string | null): Promise<Settings>
+  /** Opens the folder in the OS file manager (File Explorer, Finder, …). */
+  openFolder(folder: string): void
   claudeStatus(): Promise<ClaudeStatus>
   pickFolder(): Promise<string | null>
   pickExecutable(): Promise<string | null>

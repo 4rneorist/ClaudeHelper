@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import path from 'path'
-import { THEME_SETTINGS, type Settings } from '../shared/ipc'
+import { HEX_COLOR, THEME_SETTINGS, type Settings } from '../shared/ipc'
 
 export const MAX_RECENT = 15
 export const MIN_FONT_SIZE = 8
@@ -12,7 +12,8 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   experimentalConptyDll: false,
   restoreSession: true,
-  recentFolders: []
+  recentFolders: [],
+  folderColors: {}
 }
 
 function samePath(a: string, b: string, platform: NodeJS.Platform): boolean {
@@ -22,7 +23,11 @@ function samePath(a: string, b: string, platform: NodeJS.Platform): boolean {
 
 /** Keeps only valid fields from untrusted input (a settings file or an IPC payload). */
 export function sanitizeSettings(input: unknown, base: Settings = DEFAULT_SETTINGS): Settings {
-  const out: Settings = { ...base, recentFolders: [...base.recentFolders] }
+  const out: Settings = {
+    ...base,
+    recentFolders: [...base.recentFolders],
+    folderColors: { ...base.folderColors }
+  }
   if (!input || typeof input !== 'object') return out
   const raw = input as Record<string, unknown>
   if (typeof raw.claudePath === 'string') out.claudePath = raw.claudePath.trim()
@@ -40,6 +45,14 @@ export function sanitizeSettings(input: unknown, base: Settings = DEFAULT_SETTIN
       .filter((f): f is string => typeof f === 'string' && f.length > 0)
       .slice(0, MAX_RECENT)
   }
+  if (raw.folderColors && typeof raw.folderColors === 'object') {
+    out.folderColors = {}
+    for (const [folder, color] of Object.entries(raw.folderColors)) {
+      if (folder && typeof color === 'string' && HEX_COLOR.test(color)) {
+        out.folderColors[folder] = color.toLowerCase()
+      }
+    }
+  }
   return out
 }
 
@@ -54,13 +67,34 @@ export class SettingsStore {
   }
 
   get(): Settings {
-    return { ...this.settings, recentFolders: [...this.settings.recentFolders] }
+    return {
+      ...this.settings,
+      recentFolders: [...this.settings.recentFolders],
+      folderColors: { ...this.settings.folderColors }
+    }
   }
 
-  /** Recent folders are managed through addRecent/removeRecent, not patched wholesale. */
+  /**
+   * Recent folders and folder colors are managed through their own methods, not patched
+   * wholesale.
+   */
   update(patch: unknown): Settings {
-    const { recentFolders } = this.settings
-    this.settings = { ...sanitizeSettings(patch, this.settings), recentFolders }
+    const { recentFolders, folderColors } = this.settings
+    this.settings = { ...sanitizeSettings(patch, this.settings), recentFolders, folderColors }
+    this.save()
+    return this.get()
+  }
+
+  /** null clears the color. Anything but #rrggbb is ignored. */
+  setFolderColor(folder: string, color: string | null): Settings {
+    if (color !== null && !HEX_COLOR.test(color)) return this.get()
+    const folderColors = Object.fromEntries(
+      Object.entries(this.settings.folderColors).filter(
+        ([f]) => !samePath(f, folder, this.platform)
+      )
+    )
+    if (color !== null) folderColors[folder] = color.toLowerCase()
+    this.settings.folderColors = folderColors
     this.save()
     return this.get()
   }

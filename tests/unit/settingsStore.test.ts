@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -57,6 +57,51 @@ describe('SettingsStore', () => {
     expect(store.get().recentFolders).toEqual(['c:\\projects\\app'])
     store.removeRecent('C:\\PROJECTS\\APP')
     expect(store.get().recentFolders).toEqual([])
+  })
+
+  it('saves a color per folder', () => {
+    new SettingsStore(file, 'linux').setFolderColor('/a', '#2563EB')
+    expect(new SettingsStore(file, 'linux').get().folderColors).toEqual({ '/a': '#2563eb' })
+  })
+
+  it('removes a folder color when set to null', () => {
+    const store = new SettingsStore(file, 'linux')
+    store.setFolderColor('/a', '#2563eb')
+    store.setFolderColor('/b', '#16a34a')
+    expect(store.setFolderColor('/a', null).folderColors).toEqual({ '/b': '#16a34a' })
+  })
+
+  it('treats folder color paths case-insensitively on Windows', () => {
+    const store = new SettingsStore(file, 'win32')
+    store.setFolderColor('C:\\Projects\\App', '#111111')
+    store.setFolderColor('c:\\projects\\app', '#222222')
+    expect(store.get().folderColors).toEqual({ 'c:\\projects\\app': '#222222' })
+    expect(store.setFolderColor('C:\\PROJECTS\\APP', null).folderColors).toEqual({})
+  })
+
+  it('ignores colors that are not #rrggbb', () => {
+    const store = new SettingsStore(file, 'linux')
+    store.setFolderColor('/a', '#2563eb')
+    for (const bad of ['red', '#12345', 'url(x)', '#2563eb; color: red']) {
+      expect(store.setFolderColor('/a', bad).folderColors).toEqual({ '/a': '#2563eb' })
+    }
+  })
+
+  it('does not let update() overwrite folder colors', () => {
+    const store = new SettingsStore(file, 'linux')
+    store.setFolderColor('/a', '#111111')
+    expect(store.update({ folderColors: { '/b': '#222222' } }).folderColors).toEqual({
+      '/a': '#111111'
+    })
+  })
+
+  it('drops invalid folder colors from the settings file', () => {
+    mkdirSync(path.dirname(file), { recursive: true })
+    writeFileSync(
+      file,
+      JSON.stringify({ folderColors: { '/a': '#ABCDEF', '/b': 'nope', '': '#111111', '/c': 5 } })
+    )
+    expect(new SettingsStore(file).get().folderColors).toEqual({ '/a': '#abcdef' })
   })
 
   it('recovers from a corrupt settings file', () => {

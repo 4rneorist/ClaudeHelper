@@ -36,6 +36,7 @@ import {
   checkStartRequest,
   isAbsoluteFolderPath,
   isDimension,
+  isDirectory,
   isSafeExternalUrl
 } from './validation'
 
@@ -180,6 +181,11 @@ export function registerIpc(ctx: IpcContext): void {
   handle(IPC.recentRemove, (folder: unknown) =>
     typeof folder === 'string' ? ctx.settings.removeRecent(folder) : ctx.settings.get()
   )
+  handle(IPC.folderColorSet, (folder: unknown, color: unknown) =>
+    isAbsoluteFolderPath(folder) && (color === null || typeof color === 'string')
+      ? ctx.settings.setFolderColor(folder, color)
+      : ctx.settings.get()
+  )
 
   handle(IPC.pickFolder, async () => {
     const win = ctx.getWindow()
@@ -246,5 +252,10 @@ export function registerIpc(ctx: IpcContext): void {
 
   on(IPC.openExternal, (url: unknown) => {
     if (isSafeExternalUrl(url)) void shell.openExternal(url)
+  })
+
+  // Folders only: openPath on a file would run it.
+  on(IPC.openFolder, (folder: unknown) => {
+    if (isAbsoluteFolderPath(folder) && isDirectory(folder)) void shell.openPath(folder)
   })
 }

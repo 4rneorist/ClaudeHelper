@@ -315,3 +315,44 @@ test('settings dialog saves changes', async () => {
   )
   expect(settings.fontSize).toBe(17)
 })
+
+test('right-click a folder tab to give the folder its own color', async () => {
+  const colors = (): Promise<Record<string, string>> =>
+    page.evaluate(
+      async () =>
+        (await (window as unknown as { api: ClaudeHelperApi }).api.getSettings()).folderColors
+    )
+  const tab = page.getByRole('tab', { name: /my project/ })
+  await tab.click()
+  const picker = page.getByRole('dialog', { name: 'Tab color for my project' })
+
+  await tab.click({ button: 'right' })
+  await picker.getByRole('button', { name: 'Blue' }).click()
+  await expect(picker).toBeHidden()
+  await expect(tab).toHaveCSS('background-color', 'rgb(37, 99, 235)')
+  expect(await colors()).toEqual({ [project]: '#2563eb' })
+
+  await tab.click({ button: 'right' })
+  await picker.getByLabel('Custom color').fill('#123456')
+  await expect(tab).toHaveCSS('background-color', 'rgb(18, 52, 86)')
+
+  await tab.click({ button: 'right' })
+  await picker.getByRole('button', { name: 'No color' }).click()
+  await expect.poll(colors).toEqual({})
+})
+
+test('the folder button on a tab opens the folder in the file manager', async () => {
+  await app.evaluate(({ shell }) => {
+    const opened: string[] = []
+    ;(globalThis as { opened?: string[] }).opened = opened
+    shell.openPath = async (p: string) => {
+      opened.push(p)
+      return ''
+    }
+  })
+  const tab = page.getByRole('tab', { name: /my project/ })
+  await tab.getByRole('button', { name: /^Open my project in / }).click()
+  await expect
+    .poll(() => app.evaluate(() => (globalThis as { opened?: string[] }).opened))
+    .toEqual([project])
+})

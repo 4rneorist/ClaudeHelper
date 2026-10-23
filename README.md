@@ -2,7 +2,7 @@
 
 A desktop app for **Windows, macOS and Linux** that runs the real **Claude Code CLI** in tabs and split panes. Pick a folder and a Claude session starts there. Close the app, and next time everything comes back: folders, tabs, splits with their sizes, the window, and each tab's conversation.
 
-![ClaudeHelper with two folder tabs. The open one is split: Claude in ClaudeHelper on the left, Claude docked from the Calculator folder top right, PowerShell running the tests bottom right](docs/screenshots/main.png)
+![ClaudeHelper with two colored folder tabs, ClaudeHelper in blue and Calculator in green. The open one is split: Claude in ClaudeHelper on the left, Claude docked from the Calculator folder top right, PowerShell running the tests bottom right](docs/screenshots/main.png)
 
 ## Why ClaudeHelper
 
@@ -10,6 +10,7 @@ A desktop app for **Windows, macOS and Linux** that runs the real **Claude Code 
 - **Windows, macOS and Linux.** One app with the same features on all three. It finds the shells each system has.
 - **Remembers your workspace.** It saves the open folders, terminal tabs, split layouts **with their sizes**, the active tab and pane, and the window size and position. It saves as you go, so even a crash loses nothing. On the next start each Claude tab resumes its own conversation.
 - **Many sessions side by side.** One tab per folder and several terminals in each, split right or down, or a 2×2 grid. Drag a tab onto the edge of a pane to dock it there, even from another folder.
+- **Find a folder at a glance.** Give each folder's tab its own color. One click on the tab's folder icon opens it in File Explorer, Finder or your file manager.
 - **Old conversations a click away.** The start screen lists the last conversations in each recent folder; click one to resume it.
 - **A shell next to Claude.** PowerShell, Command Prompt, Git Bash and WSL on Windows; your login shell, bash, zsh and fish on macOS and Linux.
 
@@ -27,6 +28,10 @@ A desktop app for **Windows, macOS and Linux** that runs the real **Claude Code 
 
 ![Settings dialog with the claude executable, font size, theme and "Reopen folders, tabs and splits from last time"](docs/screenshots/settings.png)
 
+**Tab colors.** Right-click a folder tab to pick its color.
+
+![The color picker under the green Calculator tab: ten preset colors, a custom color and No color](docs/screenshots/tab-colors.png)
+
 ## Install
 
 ClaudeHelper runs the Claude Code CLI but doesn't include it. Install it and log in once before you start the app:
@@ -39,6 +44,8 @@ Then run `claude` once in a terminal to log in. The app finds `claude` by itself
 ## Features
 
 - **Folders as tabs:** each top-level tab is a folder.
+  - Its folder icon opens the folder in File Explorer (Windows), Finder (macOS) or the file manager (Linux).
+  - Right-click it to give the folder a color: one of ten presets, any custom color, or none. The color belongs to the folder, so it comes back whenever that folder is opened. The open tab shows the full color, the others a softer one, and the title switches between black and white to stay readable.
 - **Several terminals per folder:** they show as sub-tabs.
   - **+** opens a new Claude session.
   - **▾** offers New / Continue / Resume…, plus the shells installed on the machine:
@@ -151,8 +158,8 @@ The split and dock rules are pure functions in `layout.ts`.
 | `src/shared/ipc.ts` | The one contract (channels and types) between main, preload and renderer |
 | `src/main/` | Electron main process: window hardening, IPC handlers, PTY sessions, shells, past sessions, settings |
 | `src/preload/` | The minimal, typed `window.api` bridge |
-| `src/renderer/src/` | React UI. `layout.ts` (split/dock tree) and `terminal/keybindings.ts` are pure, tested functions |
-| `tests/unit/` | Vitest tests for path resolution, session management, past-session parsing, shell detection, layouts, settings, validation and keybindings |
+| `src/renderer/src/` | React UI. `layout.ts` (split/dock tree), `tabColors.ts` (folder tab colors and readable titles) and `terminal/keybindings.ts` are pure, tested functions |
+| `tests/unit/` | Vitest tests for path resolution, session management, past-session parsing, shell detection, layouts, settings, tab colors, validation and keybindings |
 | `tests/e2e/` | Playwright tests that drive the built app. A fake `claude` reports how it was launched and echoes input |
 | `scripts/` | `build-linux-docker.mjs`, which builds the Linux installers in Docker |
 | `docs/screenshots/` | The screenshots in this README |

@@ -205,6 +205,7 @@ code {
 }
 
 .tab-close,
+.tab-action,
 .tab-new,
 .icon-button {
   border: none;
@@ -229,10 +230,102 @@ code {
   height: 28px;
 }
 .tab-close:hover,
+.tab-action:hover,
 .tab-new:hover,
 .icon-button:hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+.tab-action {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  margin-right: -6px;
+}
+
+/* A folder with its own color: background and text color come from inline styles. */
+.tab.colored:hover {
+  background-image: linear-gradient(rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.08));
+}
+.tab.colored .tab-close,
+.tab.colored .tab-action {
+  color: inherit;
+  opacity: 0.75;
+}
+.tab.colored .tab-close:hover,
+.tab.colored .tab-action:hover {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  color: inherit;
+  opacity: 1;
+}
+.tab.colored .status-dot {
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, currentColor 55%, transparent);
+}
+
+.color-picker {
+  position: fixed;
+  z-index: 100;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.28);
+}
+.color-picker-swatches {
+  display: grid;
+  grid-template-columns: repeat(5, 24px);
+  gap: 8px;
+}
+.swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+}
+.swatch:hover,
+.swatch:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+.swatch[aria-pressed='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.color-picker-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.color-picker-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.color-picker-custom input {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+}
+.color-picker-none {
+  border: 1px solid var(--border);
+  background: transparent;
+  padding: 4px 8px;
+  border-radius: 5px;
+  color: var(--text);
+}
+.color-picker-none:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.color-picker-none:disabled {
+  color: var(--muted);
+  opacity: 0.6;
 }
 
 .status-dot {

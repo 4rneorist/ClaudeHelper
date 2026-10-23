@@ -1,8 +1,14 @@
 node_modules
-dist
 out
 .DS_Store
 .eslintcache
 *.log*
 test-results
 playwright-report
+
+# electron-builder output: only the installers themselves go into git
+installers/*
+!installers/*-setup.exe
+!installers/*.dmg
+!installers/*.AppImage
+!installers/*.deb

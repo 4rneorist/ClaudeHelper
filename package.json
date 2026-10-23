@@ -23,7 +23,8 @@
     "dist": "npm run build && electron-builder",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "npm run build && electron-builder --linux"
+    "build:linux": "npm run build && electron-builder --linux",
+    "build:linux:docker": "node scripts/build-linux-docker.mjs"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",

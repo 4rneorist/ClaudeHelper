@@ -2,10 +2,14 @@ appId: com.claudehelper.app
 productName: ClaudeHelper
 directories:
   buildResources: build
+  output: installers
 files:
   - '!**/.vscode/*'
   - '!src/*'
   - '!tests/*'
+  - '!docs/*'
+  - '!scripts/*'
+  - '!{test-results,playwright-report}/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{vitest.config.mts,playwright.config.ts}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'

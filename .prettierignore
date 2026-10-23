@@ -1,10 +1,10 @@
 out
-dist
+installers
 pnpm-lock.yaml
 LICENSE.md
 tsconfig.json
 tsconfig.*.json
-dist
+installers
 out
 node_modules
 test-results

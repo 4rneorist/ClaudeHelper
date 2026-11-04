@@ -3,11 +3,14 @@ import { tmpdir } from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  finishedTurn,
+  lastTurn,
   listPastSessions,
   projectDirName,
   promptText,
   scanHead,
-  scanTitles
+  scanTitles,
+  type ClaudeTurn
 } from '../../src/main/claudeSessions'
 
 const CWD = process.platform === 'win32' ? 'C:\\Projects\\My App' : '/home/me/My App'
@@ -123,5 +126,95 @@ describe('listPastSessions', () => {
       platform: process.platform
     })
     expect(sessions).toEqual([])
+  })
+})
+
+const assistant = (blocks: object[], stop: string | null, extra: object = {}): string =>
+  line({
+    type: 'assistant',
+    message: { role: 'assistant', content: blocks, stop_reason: stop },
+    ...extra
+  })
+const text = (t: string): object => ({ type: 'text', text: t })
+const at = (iso: string): object => ({ timestamp: iso })
+
+describe('lastTurn', () => {
+  it("is Claude's text since your last prompt, between its tool calls and at the end", () => {
+    const lines = [
+      user('first question', at('2026-11-04T10:00:00.000Z')),
+      assistant([text('An old answer.')], 'end_turn'),
+      user('fix the bug', at('2026-11-04T10:05:00.000Z')),
+      assistant([{ type: 'thinking', thinking: 'hmm' }], 'tool_use'),
+      assistant([text('Let me look at the file.')], 'tool_use'),
+      assistant([{ type: 'tool_use', name: 'Read', input: {} }], 'tool_use'),
+      user([{ type: 'tool_result', content: 'file contents' }]),
+      assistant([text('Found it, an off-by-one in `loop`.')], 'end_turn', { isSidechain: false }),
+      assistant([text('A subagent says hi')], 'end_turn', { isSidechain: true }),
+      line({ type: 'system', subtype: 'turn_duration' })
+    ]
+    expect(lastTurn(lines)).toEqual({
+      promptAt: Date.parse('2026-11-04T10:05:00.000Z'),
+      text: 'Let me look at the file.\n\nFound it, an off-by-one in `loop`.',
+      complete: true
+    })
+  })
+
+  it("isn't complete while Claude still works, or when it was stopped", () => {
+    const lines = [
+      user('go', at('2026-11-04T10:05:00.000Z')),
+      assistant([text('Starting.')], 'tool_use')
+    ]
+    expect(lastTurn(lines)?.complete).toBe(false)
+  })
+
+  it('without its prompt (cut off), is what is there', () => {
+    expect(lastTurn([assistant([text('The end.')], 'end_turn')])).toEqual({
+      promptAt: 0,
+      text: 'The end.',
+      complete: true
+    })
+    expect(lastTurn(['', 'not json'])).toBeNull()
+  })
+})
+
+describe('finishedTurn', () => {
+  const turn = (promptAt: number, complete = true): ClaudeTurn => ({
+    promptAt,
+    text: 'Done.',
+    complete
+  })
+  const opts = { tries: 3, delayMs: 1 }
+
+  it('is the turn once it has ended', async () => {
+    expect(await finishedTurn(async () => turn(5000), 5000, opts)).toEqual({
+      kind: 'turn',
+      text: 'Done.'
+    })
+  })
+
+  it('reads again while the turn is still being written, then takes what there is', async () => {
+    let reads = 0
+    const read = async (): Promise<ClaudeTurn> => turn(5000, ++reads >= 2)
+    expect(await finishedTurn(read, 5000, opts)).toEqual({ kind: 'turn', text: 'Done.' })
+    expect(reads).toBe(2)
+    reads = 0
+    expect(await finishedTurn(async () => (reads++, turn(5000, false)), 5000, opts)).toEqual({
+      kind: 'turn',
+      text: 'Done.'
+    })
+    expect(reads).toBe(opts.tries + 1)
+  })
+
+  it('tells a turn that started before the prompt was sent: that prompt is still queued', async () => {
+    expect(await finishedTurn(async () => turn(1000), 60_000, opts)).toEqual({ kind: 'earlier' })
+    // For an answer (0), any turn is the one.
+    expect(await finishedTurn(async () => turn(1000), 0, opts)).toEqual({
+      kind: 'turn',
+      text: 'Done.'
+    })
+  })
+
+  it('is unknown without a transcript', async () => {
+    expect(await finishedTurn(async () => null, 0, opts)).toEqual({ kind: 'unknown' })
   })
 })

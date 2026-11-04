@@ -1,7 +1,11 @@
+import { titleFromText } from '../../shared/bookmarks'
+import type { SendTarget } from '../../shared/ipc'
+import { samePath } from '../../shared/paths'
 import { DEFAULT_FONT_SIZE } from './constants'
 import { leaves } from './layout'
 import {
   activeTerminalKey,
+  locate,
   useStore,
   workspaceTitle,
   type TabSettingsTarget,
@@ -107,6 +111,16 @@ export function runShortcut(action: KeyAction): void {
     case 'nextWaiting':
       jumpToWaiting()
       break
+    case 'search': {
+      const key = activeTerminalKey(store)
+      if (key) void getTerminal(key)?.openSearch()
+      break
+    }
+    case 'snip': {
+      const key = activeTerminalKey(store)
+      if (key) void snipInto(key)
+      break
+    }
   }
 }
 
@@ -122,6 +136,77 @@ export function toggleTabSettings(target: TabSettingsTarget): void {
 export function tabAnchor(e: React.MouseEvent, tabSelector: string): DOMRect {
   const el = (e.currentTarget as Element).closest(tabSelector) ?? e.currentTarget
   return el.getBoundingClientRect()
+}
+
+/**
+ * The Claude sessions a terminal's text can be sent to: every other one that runs or can be
+ * resumed, this folder's first, then in tab order.
+ */
+export function sendTargets(from: string): SendTarget[] {
+  const { terminals, workspaces, settings, appInfo } = useStore.getState()
+  const platform = appInfo?.platform ?? ''
+  const source = terminals[from]
+  const reachable = new Set(['dormant', 'starting', 'running'])
+  const keys = workspaces
+    .flatMap((w) => w.subTabs.flatMap((s) => leaves(s.layout)))
+    .filter((k) => {
+      const t = terminals[k]
+      return k !== from && t?.spec.kind === 'claude' && reachable.has(t.status)
+    })
+  const here = (k: string): boolean => !!source && samePath(terminals[k].cwd, source.cwd, platform)
+  return [...keys.filter(here), ...keys.filter((k) => !here(k))].map((key) => {
+    const ws = locate(workspaces, key)?.workspace
+    const folder = ws ? workspaceTitle(ws, settings?.folderTitles, platform) : ''
+    return { key, label: folder ? `${terminals[key].title} · ${folder}` : terminals[key].title }
+  })
+}
+
+/** Shows session `to` and puts the text into its prompt, unsent, for you to add to. */
+export function sendToTerminal(to: string, text: string): void {
+  if (!useStore.getState().terminals[to]) return
+  useStore.getState().revealTerminal(to) // a dormant tab starts once shown
+  getTerminal(to)?.deliver(text)
+}
+
+export function toggleBookmarks(open?: boolean): void {
+  const { settings, updateSettings, editBookmark } = useStore.getState()
+  const next = open ?? !settings?.bookmarksOpen
+  if (!next) editBookmark(null)
+  if (next !== settings?.bookmarksOpen) void updateSettings({ bookmarksOpen: next })
+}
+
+/** Opens the bookmarks panel with a new prompt holding this text, for you to name and file. */
+export function bookmarkText(text: string): void {
+  toggleBookmarks(true)
+  useStore
+    .getState()
+    .editBookmark({ type: 'prompt', parent: null, title: titleFromText(text), text })
+}
+
+/** Puts a bookmarked prompt into the active terminal's prompt, unsent, and goes there. */
+export function insertIntoActiveTerminal(text: string): void {
+  const key = activeTerminalKey(useStore.getState())
+  if (!key) return
+  sendToTerminal(key, text)
+  getTerminal(key)?.focus()
+}
+
+/** Lets you snip a region of the screen and puts it into this Claude's prompt as an image. */
+export async function snipInto(key: string): Promise<void> {
+  const t = useStore.getState().terminals[key]
+  if (t?.spec.kind !== 'claude' || t.status !== 'running') return
+  const result = await window.api.snip()
+  if (result === 'unavailable') {
+    await window.api.confirm({
+      message: 'No screenshot tool found',
+      detail: 'Snipping needs gnome-screenshot, Spectacle or Flameshot. Install one of them.',
+      okLabel: 'OK'
+    })
+  }
+  if (result === 'captured') {
+    useStore.getState().revealTerminal(key)
+    getTerminal(key)?.pasteImage()
+  } else getTerminal(key)?.focus()
 }
 
 /** Brings up the next session that asks for your answer or finished unseen (of one kind). */

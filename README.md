@@ -6,13 +6,16 @@ A desktop app for **Windows, macOS and Linux** that runs the real **Claude Code 
 
 ### What's new in 1.0.1
 
-- **See what each Claude is doing.** The status dot is green and pulsing while Claude works, yellow when it's done and waits for your next prompt, and red and pulsing when it needs your answer (a permission prompt, a question, a plan to approve). Folder tabs show what needs you most.
+- **See what each Claude is doing.** The status dot is green and pulsing while Claude works, yellow when it's done and waits for your next prompt, and red and pulsing when it needs your answer (a permission prompt, a question, a plan to approve). A folder tab is red if any Claude in it needs you, green if any is still working, and yellow only when all are idle.
 - **Never miss a session that needs you.** A sound for "finished" and another for "needs your answer", every time. For a session you aren't looking at, its tab is underlined, a toast says where it's from, and the bell at the top right keeps the list. With the window in the background or minimized, the taskbar button turns red or yellow and Windows shows a notification.
+- **Away from the computer?** Optionally, your own Telegram bot sends you a message when a session finishes or needs your answer. With remote control on, you can also answer Claude's questions from your phone, send prompts, read a chat and open new ones.
 - **Get there fast.** Ctrl+Shift+J jumps to the next session that waits, the status bar counts them ("● 1 needs your answer · ● 2 finished"), and hovering a tab previews its last lines.
 - **Less noise when you want it.** Mute a session or a folder, switch on Do not disturb, choose the sounds and their volume, and set how often a question that is still waiting reminds you.
 - **Name and color your tabs.** ⚙ on a folder or session tab sets its title and color; drag tabs to reorder them.
 - **Two folders side by side.** "Join sessions to" in a folder's settings shows two folders next to each other, each with its own tabs.
+- **Bookmarked prompts.** Keep the prompts you use again in folders and subfolders, in a column on the right. One click puts a prompt into the session; the right-click menu bookmarks selected text and pastes bookmarks.
 - **Git branch on each folder tab**, with `*` when there are uncommitted changes.
+- **A picture behind the terminals**, as in Windows Terminal: Settings → Background picture, with how much it shows and whether it fills, fits, stretches or tiles. Text that would get lost on it, or on the light theme, is darkened or lightened until it reads.
 
 Details for each are under [Features](#features).
 
@@ -89,7 +92,7 @@ Then run `claude` once in a terminal to log in. The app finds `claude` by itself
   - **None** shows them one at a time again, and closing either folder ends the pair. The pair and the divider position are saved with the layout.
 - **Knows what Claude is doing:**
   - Claude Code puts a spinner in its window title while it works and ✳ when it stops; the app reads that, and when Claude stops it looks at the screen for a choice Claude waits for (a permission prompt, a question, a plan to approve).
-  - The status dot on the pane, its tab and its folder tab shows it: **green and pulsing** while Claude works, **yellow** when it's idle and waits for your next prompt, **red and pulsing** when it needs your answer. A folder tab shows what needs you most. The status bar says "working", "idle" or "needs your answer".
+  - The status dot on the pane, its tab and its folder tab shows it: **green and pulsing** while Claude works, **yellow** when it's idle and waits for your next prompt, **red and pulsing** when it needs your answer. A folder tab is red if any Claude in it needs your answer, green if any is still working, and yellow only when all of them are idle. The status bar says "working", "idle" or "needs your answer".
   - Every time Claude finishes or asks, a sound plays, also for the session you are looking at: by default a soft falling chime when it finishes, a brighter rising one when it needs your answer. Settings lets you pick one of five sounds for each (▶ plays it) and the volume, or turn sounds off.
   - When Claude finishes or asks in a tab you aren't looking at (another tab, or the app in the background):
     - That tab and its folder tab get a yellow or red underline until you look at it.
@@ -104,14 +107,49 @@ Then run `claude` once in a terminal to log in. The app finds `claude` by itself
   - **Reminder:** while a session keeps asking and you haven't looked, it calls again every 5 minutes (at most 3 times; Settings sets the interval or turns it off).
   - **Mute** a session or a whole folder in its ⚙ settings, for long jobs you don't need to hear about: it keeps its dot, underline and bell entry, but plays no sound, shows no toast or OS notification, and doesn't count as waiting. Muted tabs show a crossed-out bell.
   - **Do not disturb**, a switch at the top of the bell list: no sounds, toasts or OS notifications, while the list still fills. It switches off when the app restarts.
+  - **Telegram** (off by default): a message from your own bot when a session finishes or needs your answer, reminders included. Muted sessions and Do not disturb are skipped. In Settings, **When** picks between "every time" (even with the app in front of you), "whenever the app is in the background" and "when I've been away N minutes". Away means no mouse or keyboard input for that long, or a locked screen, and then you also hear about the session you had in front of you. To set it up:
+    1. In Telegram, open [@BotFather](https://t.me/BotFather), send `/newbot`, and pick a name and a username that ends in `bot`. BotFather replies with the bot token (`123456789:AAE…`). Paste it into **Settings → Bot token**.
+    2. Open your new bot from BotFather's reply (`t.me/your_bot`) and press **Start**. A bot can't write to you before that.
+    3. Press **Find** next to Chat ID: the app reads the chat that last wrote to the bot. By hand instead: open `https://api.telegram.org/bot<token>/getUpdates` in a browser and copy the number after `"chat":{"id":`. For a group, add the bot to it and send `/start@your_bot` there; a group's ID starts with `-`.
+    4. Press **Send test message**, then Save.
+
+    No server, webhook or payment is involved. The app talks to `api.telegram.org` directly, through the system proxy if there is one. A message starts with what happened (`✅ IDLE`, `🔔 NEED YOUR ATTENTION`, or `⏰ STILL NEEDS YOUR ATTENTION` for a reminder), then which folder and tab, and the conversation's name below. Without remote control, it never contains what is in the terminal. The token is stored encrypted for your OS user (Windows DPAPI, macOS Keychain, Linux libsecret) when the system offers that.
+  - **Telegram remote control** (off by default; Settings → **Let me answer and send prompts from Telegram**). It only works in your own private chat with the bot: the chat ID must be yours (a number without `-`). Messages from anyone else, from groups, and anything sent while the app was closed are ignored. Whoever has your Telegram account can then make Claude work on your computer, so keep that in mind before you switch it on.
+    - **Reply** to any bot message about a chat (swipe it in Telegram) to send that chat a prompt. It is typed in and sent with Enter; a prompt sent while Claude works waits in Claude's queue.
+    - **Claude's whole reply** comes back once it is done with a prompt or answer sent from Telegram: the `✅ IDLE` message carries everything Claude wrote in that turn, formatted (code, bold, lists, tables), read from the conversation's transcript rather than the screen. A long reply takes several messages (five at most; beyond that its start is left out). Its questions in the meantime come to Telegram too, even when the chat is muted.
+    - **Questions** come with what Claude's dialog shows (the command or file it wants to touch, or its question) and a button per option. Tap one, or reply with its number. Where Claude offers "Type something", reply in your own words. For a question that takes several answers, reply with their numbers (`1 3`), and your own words for its "Type something" after a colon (`1 3: Black`). The next question of a form follows by itself, and the form is submitted at the end. A button for a question that has been answered or has changed says so.
+    - **A topic per session** (optional): in @BotFather tap **Open**, pick your bot, then **Bot Settings** → turn on **Threaded Mode**. Each session then gets its own topic in your chat with the bot ("my project › Claude 1", one colour per folder) the first time it has something for you, and its calls, questions and replies go there. Write in a topic and it goes to that session; there `/getchat` and `/prompt` need no chat name. Answers to what you write come where you wrote it. A tab keeps its topic across restarts, its topic is renamed with it, and closing it leaves a last word there. To delete old topics yourself, also turn off "Disallow users to create new threads" in @BotFather. Send test message in Settings says whether topics are on. Without Threaded Mode, or if Telegram can't write to a topic, everything goes to the one chat as before.
+    - **Commands** (they appear in Telegram's `/` menu):
+      - `/chats` lists the open Claude chats, numbered, with their state.
+      - `/newchat [name]` opens a new chat in one of the open folders, in the background. It asks which folder when more than one is open, and asks for a name if you gave none.
+      - `/prompt <chat> <text>` sends a prompt, or answers the chat's question. `<chat>` is a number from `/chats`, a name or the start of one, or `folder/name` when names repeat.
+      - `/getchat <chat> [rows]` shows the chat's last 50 rows (up to 100), without Claude's input box, with a 🔄 Refresh button.
+
+      Claude draws tables as wide as its terminal, which a phone can't show, so in Telegram a table that fits a phone stays a grid and a wider one becomes its rows, one field a line (`Repo: Tenant`).
+      - `/help` lists all this.
+
+      With remote control on, Claude's questions and the screens you ask for go to Telegram.
   - **Preview:** hold the mouse over a session tab to see what it's doing and its last lines (its question, when it asks).
 - **Git branch:** each folder tab shows the folder's branch (the short commit when detached), with `*` for uncommitted changes, and so does the status bar. It is refreshed every 5 seconds and when the window gets focus, without taking git's index lock, so it never gets in the way of Claude's commits.
+- **Jira ticket from the branch** (off by default): switch it on in Settings and give the ticket URL, e.g. `https://your-company.atlassian.net/browse/{key}`. A branch like `bugfix/MT-25443_login` then shows **MT-25443** on its folder tab and in the status bar; a click opens the ticket in your browser.
+- **Bookmarked prompts:** the bookmark button next to ⚙ shows or hides a column on the right with your saved prompts. It stays open or closed across restarts.
+  - **+** adds a prompt, and the folder button adds a folder, at the top level. Hold the mouse over a folder to add a prompt or a subfolder in it, or to edit (✎) or delete it; prompts have ✎ and delete too. The editor sets the title, the text and the folder, so it also moves things between folders. Without a title, a prompt is named after its first line. Folders nest up to 8 levels deep.
+  - Click a prompt to put it into the active session's prompt, unsent, so you can add to it or press Enter. Click a folder to fold or unfold it.
+  - Right-click in a terminal: **Paste from Bookmarks** lists your folders and prompts as submenus. **Add Selection to Bookmarks…** opens the editor with the selected text. Without a selection it offers **Add Copied Text to Bookmarks…**, because Claude in fullscreen copies what you drag over.
+  - They are saved in `bookmarks.json` in the app's data folder. If that file is ever unreadable, a copy is kept next to it before it is replaced.
+- **Search the scrollback:** **Ctrl+F** (Cmd+F on macOS) opens a search bar over the terminal. Matches are highlighted as you type, with a count; Enter and Shift+Enter go to the next and previous one, Esc closes it.
+- **Jump between your messages:** **Ctrl+↑ / Ctrl+↓** (Cmd+↑ / Cmd+↓ on macOS) in a Claude tab scrolls to your previous or next message to Claude, and flashes it.
+- **Claude's fullscreen renderer:** with `/tui fullscreen`, Claude draws its own screen and the conversation isn't in the terminal's scrollback. Search and the message jumps then first open Claude's transcript view (Ctrl+O) and have it write the whole conversation into the scrollback (`[`). Esc or `q` takes Claude back to its normal view.
+- **Open files from the output, like in VS Code:** **Ctrl+click** (Cmd+click on macOS) a file or folder path that Claude or a shell printed, such as `C:\Users\me\out\head.png`, `src/store.ts:877` or `~/notes.md`, and it opens with its default program; a folder opens in File Explorer, Finder or your file manager. Paths are underlined while the mouse is on them, if the file exists, with the hint "Open file (Ctrl + click)". Relative paths count from the folder the terminal started in. Programs and scripts (`.exe`, `.bat`, `.ps1`, `.js`, executable files on macOS and Linux) are only shown in their folder, since opening them would run them.
+- **Send to another session:** select text in any terminal, right-click and pick **Send Selection To › Claude 2 · my project**. The text lands in that Claude's prompt without being sent, so you can add "review this:" and press Enter. A tab that hasn't started yet starts and gets it once Claude is ready. In Claude's fullscreen renderer a drag selects inside Claude, which copies it; the menu then offers **Send Copied Text To**.
+- **Snip the screen into the prompt:** **Ctrl+Shift+S** (Cmd+Shift+S on macOS) in a Claude tab, or **Snip Screen into This Prompt** in its right-click menu. The app steps aside, the system's own picker lets you drag a region (the Snipping Tool overlay on Windows, `screencapture` on macOS, gnome-screenshot, Spectacle or Flameshot on Linux), and the picture arrives in Claude's prompt as an image. A cancelled snip leaves the clipboard as it was.
 - **Picks up where you left off:**
   - The app saves the open folder tabs, terminal tabs, split layouts with their sizes, the active tab and pane, and the window size and position. Saving happens as you go: within a fraction of a second of opening a folder or tab, starting or resuming a session, closing, docking or resizing. A crash loses nothing. Everything reopens on the next start.
   - Each Claude tab resumes its own conversation, even after `/clear` or `/resume` inside claude switched it to another one. The app reads which conversation each running claude has open from Claude Code's session registry (`~/.claude/sessions/`), and watches it for changes.
   - Shell tabs reopen as fresh shells in the same folder.
   - **Restart** on an exited Claude tab also resumes its conversation.
-  - Turn this off in Settings ("Reopen folders, tabs and splits from last time").
+  - Only the tabs you see start right away. The others wait, with a hollow dot, and resume when you first open them: the app starts quicker, and tabs you don't get back to take no memory. Settings switches this off ("Resume each tab only when you first open it").
+  - Turn restoring off in Settings ("Reopen folders, tabs and splits from last time").
 - **Recent sessions:**
   - Expand a recent folder (›) to see its last 5 Claude conversations, read from `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR`).
   - Click one to resume it with `claude --resume <id>`.
@@ -183,13 +221,18 @@ The tag has to match the version in `package.json`. Review the draft under **Rel
 | Next / previous terminal tab | Ctrl+Tab / Ctrl+Shift+Tab | same |
 | Next / previous folder tab | Ctrl+PageDown / Ctrl+PageUp | same |
 | Go to the next session that asks or finished unseen | Ctrl+Shift+J | Cmd+Shift+J |
+| Search the scrollback | Ctrl+F, Ctrl+Shift+F | Cmd+F |
+| Previous / next of your messages to Claude | Ctrl+↑ / Ctrl+↓ | Cmd+↑ / Cmd+↓ |
+| Snip a region of the screen into Claude's prompt | Ctrl+Shift+S | Cmd+Shift+S |
 | Font size bigger / smaller / reset | Ctrl+= / Ctrl+- / Ctrl+0, or Ctrl + mouse wheel | Cmd+= / Cmd+- / Cmd+0, or Cmd + wheel |
 
-All other keys go straight to claude, including Ctrl+C with nothing selected, Esc, Shift+Tab, Ctrl+R, Ctrl+T and Ctrl+Shift+- (undo).
+All other keys go straight to claude, including Ctrl+C with nothing selected, Esc, Shift+Tab, Ctrl+R, Ctrl+S, Ctrl+T and Ctrl+Shift+- (undo). In a shell, Ctrl+↑ / Ctrl+↓ go to the shell too.
+
+The shortcuts work with any keyboard layout: with a Ukrainian or Russian layout active, Ctrl+C still copies the selection, and Ctrl+V and the Ctrl+Shift shortcuts still work.
 
 Other mouse actions:
-- **Right-click in a terminal:** opens a Copy/Paste menu. On a folder tab, sub-tab or pane title bar it opens that tab's settings, like ⚙.
-- **Links:** they open in your browser, which matters for the `/login` flow.
+- **Right-click in a terminal:** opens a menu with Copy and Paste, **Paste from Bookmarks**, **Add Selection to Bookmarks…**, **Send Selection To** another Claude session, and, in a Claude tab, **Snip Screen into This Prompt**. On a folder tab, sub-tab or pane title bar it opens that tab's settings, like ⚙.
+- **Ctrl+click on a link** (Cmd+click on macOS): a web link opens in your browser, which matters for the `/login` flow, and a file path opens with its default program. A plain click leaves links alone, as in VS Code.
 - **Dropping a file on a running session:** inserts its path.
 - **Dropping a folder on the start screen:** opens a session there.
 
@@ -217,10 +260,10 @@ The split and dock rules are pure functions in `layout.ts`.
 
 | Path | Contents |
 |---|---|
-| `src/shared/ipc.ts` | The one contract (channels and types) between main, preload and renderer |
-| `src/main/` | Electron main process: window hardening, IPC handlers, PTY sessions, shells, past sessions, settings, OS notifications and the taskbar button, git branch |
+| `src/shared/ipc.ts` | The one contract (channels and types) between main, preload and renderer; `questions.ts` words Claude's questions for Telegram; `screenTables.ts` makes Claude's tables fit a phone |
+| `src/main/` | Electron main process: window hardening, IPC handlers, PTY sessions, shells, past sessions, settings, bookmarks (`bookmarksStore.ts`), Telegram (`telegram.ts`; remote control in `telegramBot.ts`; Claude's replies formatted in `telegramMarkdown.ts`; a topic per session in `telegramTopics.ts`), OS notifications and the taskbar button, git branch, screen snips (`snip.ts`) |
 | `src/preload/` | The minimal, typed `window.api` bridge |
-| `src/renderer/src/` | React UI. Pure, tested functions: `layout.ts` (split/dock tree), `tabColors.ts` (tab colors and readable titles), `terminal/keybindings.ts`, `terminal/claudeActivity.ts` (what Claude is doing, from its title and screen) and `waiting.ts` (which sessions wait, in what order, reminders) |
+| `src/renderer/src/` | React UI. Pure, tested functions: `layout.ts` (split/dock tree), `tabColors.ts` (tab colors and readable titles), `terminal/keybindings.ts`, `terminal/claudeActivity.ts` (what Claude is doing, from its title and screen; where your messages are), `jira.ts` (the ticket key in a branch name), `bookmarks.ts` (the bookmark tree: add, edit, move, remove), `waiting.ts` (which sessions wait, in what order, reminders) and `telegramChats.ts` (the chats Telegram lists and finds by name, the answers you send, topic names). `telegramCommands.ts` carries out what you send the bot; `telegramTopics.ts` keeps each tab's topic, its name and colour |
 | `tests/unit/` | Vitest tests for path resolution, session management, past-session parsing, shell detection, layouts, settings, tabs, joined folders, Claude's activity, what waits, notifications, git info, tab colors, validation and keybindings |
 | `tests/e2e/` | Playwright tests that drive the built app. A fake `claude` reports how it was launched, echoes input, and can work, finish and ask like the real one |
 | `scripts/` | `build-linux-docker.mjs`, which builds the Linux installers in Docker |
@@ -230,7 +273,8 @@ The split and dock rules are pure functions in `layout.ts`.
 
 - **Renderer sandbox:** the renderer runs sandboxed with context isolation and no Node access. It has a strict CSP and cannot navigate away.
 - **Main process checks:** the main process validates every IPC argument (session ids, terminal sizes, folders, URLs) and only accepts calls from its own window.
-- **Links:** only `http(s)` links open externally.
+- **Links:** only `http(s)` links open externally. A file path opens only if it exists, and a program or script is shown in its folder instead of being run.
+- **Telegram remote control:** off by default. When on, main obeys only messages and button presses from the configured private chat, and drops anything written before the app started. Buttons work only on messages sent in the current run, and an answer is typed only while that same question is on screen. Commands can't run shell tabs; they only reach Claude chats.
 
 ### Environment passed to claude
 
@@ -243,7 +287,7 @@ The app passes on your full environment with these changes:
 
 | Phase | Planned work |
 |---|---|
-| **2** | Per-launch `--model` and `--permission-mode`. Pinned folders. Search in scrollback. Claude's own status protocol (OSC 7501) on macOS and Linux, to tell a permission prompt from a finished turn (on Windows, ConPTY doesn't pass the terminal's reply back to claude) |
+| **2** | Per-launch `--model` and `--permission-mode`. Pinned folders. Claude's own status protocol (OSC 7501) on macOS and Linux, to tell a permission prompt from a finished turn (on Windows, ConPTY doesn't pass the terminal's reply back to claude) |
 | **3** | An optional Docker sandbox per session. File tree and git diff panels. A browser for past conversations. Auto-update and code signing. A phone push (ntfy, Slack or Teams) when a session asks while you are away |
 
 ## License

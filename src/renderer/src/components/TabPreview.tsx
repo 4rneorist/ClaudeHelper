@@ -13,7 +13,8 @@ const DOING: Record<string, string> = {
   running: 'running',
   starting: 'starting',
   exited: 'exited',
-  error: 'failed to start'
+  error: 'failed to start',
+  dormant: 'not resumed yet, starts when you open it'
 }
 
 /**

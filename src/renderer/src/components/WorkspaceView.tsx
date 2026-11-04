@@ -103,7 +103,7 @@ function SubTabBar({ workspace }: { workspace: Workspace }): React.JSX.Element {
   const moveToSubTab = useStore((s) => s.moveToSubTab)
   const active = workspace.subTabs.find((s) => s.key === workspace.activeSubTab)
 
-  const add = (spec: TerminalSpec): void => addTerminal(workspace.key, spec)
+  const add = (spec: TerminalSpec): void => void addTerminal(workspace.key, spec)
   const newItems: MenuItem[] = [
     { header: 'Claude' },
     { label: MODE_LABELS.new, onSelect: () => add({ kind: 'claude', mode: 'new' }) },

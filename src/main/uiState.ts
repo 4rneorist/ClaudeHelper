@@ -85,6 +85,10 @@ export function sanitizeUiState(input: unknown, keepRuntime = false): UiState | 
     if (typeof r.claudeSessionId === 'string' && SESSION_ID.test(r.claudeSessionId)) {
       saved.claudeSessionId = r.claudeSessionId
     }
+    const topic = r.telegramTopic
+    if (typeof topic === 'number' && Number.isInteger(topic) && topic > 0) {
+      saved.telegramTopic = topic
+    }
     if (keepRuntime && typeof r.pid === 'number' && typeof r.startedAt === 'number') {
       saved.pid = r.pid
       saved.startedAt = r.startedAt
@@ -204,6 +208,15 @@ export class UiStateStore {
     this.write(this.latest, await this.currentSessionIds(this.latest))
   }
 
+  /** The conversation a Claude tab has open now, and the folder it runs in; null if unknown. */
+  async conversationOf(key: string): Promise<{ cwd: string; sessionId: string } | null> {
+    const state = this.latest
+    const t = state?.terminals.find((t) => t.key === key)
+    if (!state || !t || t.spec.kind !== 'claude') return null
+    const sessionId = (await this.currentSessionIds(state))[key] ?? t.claudeSessionId
+    return sessionId ? { cwd: t.cwd, sessionId } : null
+  }
+
   private async currentSessionIds(state: UiState): Promise<Record<string, string>> {
     const processes = state.terminals.flatMap((t) =>
       t.spec.kind === 'claude' && t.pid !== undefined && t.startedAt !== undefined
@@ -241,6 +254,7 @@ export class UiStateStore {
         if (t.muted) persistedTerminal.muted = true
         const id = ids[t.key] ?? t.claudeSessionId
         if (id) persistedTerminal.claudeSessionId = id
+        if (t.telegramTopic) persistedTerminal.telegramTopic = t.telegramTopic
         return persistedTerminal
       })
     }

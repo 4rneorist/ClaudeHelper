@@ -1,9 +1,18 @@
 import { useContext, useEffect, useRef } from 'react'
-import { closeTerminal, runShortcut } from '../actions'
+import {
+  bookmarkText,
+  closeTerminal,
+  runShortcut,
+  sendTargets,
+  sendToTerminal,
+  snipInto
+} from '../actions'
 import { useStore, type TerminalState } from '../store'
 import { darkTheme, lightTheme } from '../terminal/themes'
 import { ensureTerminal } from '../terminal/TerminalSession'
+import { pictureStyle, useTerminalPicture } from '../terminalPicture'
 import { ThemeContext } from '../themeContext'
+import { SearchBar } from './SearchBar'
 
 interface Props {
   terminal: TerminalState
@@ -16,6 +25,7 @@ export function TerminalView({ terminal: t, visible }: Props): React.JSX.Element
   const appInfo = useStore((s) => s.appInfo)!
   const fontSize = useStore((s) => s.settings?.fontSize ?? 14)
   const restartTerminal = useStore((s) => s.restartTerminal)
+  const wakeTerminal = useStore((s) => s.wakeTerminal)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const theme = useContext(ThemeContext) === 'dark' ? darkTheme : lightTheme
 
@@ -25,7 +35,11 @@ export function TerminalView({ terminal: t, visible }: Props): React.JSX.Element
     fontSize,
     theme,
     domRenderer: appInfo.e2e,
-    onShortcut: runShortcut
+    onShortcut: runShortcut,
+    sendTargets,
+    onSend: sendToTerminal,
+    onSnip: (key) => void snipInto(key),
+    onBookmark: bookmarkText
   })
 
   useEffect(() => {
@@ -39,6 +53,11 @@ export function TerminalView({ terminal: t, visible }: Props): React.JSX.Element
     }
   }, [session])
 
+  // A restored terminal starts once it is first shown, at the size it is shown at.
+  useEffect(() => {
+    if (t.status === 'dormant' && visible) wakeTerminal(t.key)
+  }, [wakeTerminal, t.key, t.status, visible])
+
   useEffect(() => {
     if (t.status === 'starting') void session.start(t.attempt, t.cwd, t.spec)
   }, [session, t.attempt, t.status, t.cwd, t.spec])
@@ -47,13 +66,22 @@ export function TerminalView({ terminal: t, visible }: Props): React.JSX.Element
     if (visible) session.fit()
   }, [session, visible])
 
-  useEffect(() => session.setAppearance(fontSize, theme), [session, fontSize, theme])
+  const picture = useTerminalPicture()
+  const seeThrough = picture !== null
+  useEffect(
+    () => session.setAppearance(fontSize, theme, seeThrough),
+    [session, fontSize, theme, seeThrough]
+  )
 
   const what = t.spec.kind === 'claude' ? 'Claude' : t.title
 
   return (
-    <div className="terminal-pane">
+    <div
+      className={picture ? 'terminal-pane with-picture' : 'terminal-pane'}
+      style={picture ? pictureStyle(picture, theme.background ?? '#000000') : undefined}
+    >
       <div className="terminal-host" ref={hostRef} />
+      {t.search !== undefined && <SearchBar terminal={t.key} request={t.search} />}
       {t.status === 'exited' && (
         <div className="terminal-overlay" role="status">
           <span>

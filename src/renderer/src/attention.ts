@@ -1,3 +1,4 @@
+import type { AttentionRequest } from '../../shared/ipc'
 import { playSound } from './sounds'
 import {
   locate,
@@ -8,13 +9,17 @@ import {
   type TerminalState
 } from './store'
 import { conversationTitle } from './terminal/claudeActivity'
+import { topicRef } from './telegramTopics'
+import { getTerminal } from './terminal/TerminalSession'
 import { isMuted, reminderDue, waitingSummary } from './waiting'
 
 // Whenever a session finishes or asks for your answer, a sound for each, even in the session you
 // are looking at. When you weren't looking: a toast and an entry in the notification list (the
 // bell), and an OS notification with a flashing taskbar button (main only shows those while the
 // window is in the background). A muted session, or Do not disturb, only gets the list entry. The taskbar button and the dock / launcher badge
-// show what waits; a session that keeps asking unseen is reminded of every few minutes.
+// show what waits; a session that keeps asking unseen is reminded of every few minutes. Main also
+// sends these calls to Telegram when that is set up, and the ones you were looking at too: you
+// may have walked away from the screen.
 
 export const ATTENTION_LABELS: Record<Attention, string> = {
   finished: 'Claude finished',
@@ -49,7 +54,10 @@ export function startAttention(): void {
     for (const t of Object.values(state.terminals)) {
       const before = prev.terminals[t.key]
       // Every finish or question sounds, even in the session you are looking at.
-      if (t.lastCall && t.lastCall !== before?.lastCall) sound(t, t.lastCall.kind)
+      if (t.lastCall && t.lastCall !== before?.lastCall) {
+        sound(t, t.lastCall.kind)
+        if (t.lastCall.seen) callSeen(t, t.lastCall.kind)
+      }
       if (t.attention !== before?.attention) reminders.delete(t.key)
       if (t.attention && t.attention !== before?.attention) call(t, t.attention)
     }
@@ -91,6 +99,33 @@ function sound(t: TerminalState, kind: Attention): void {
 /** The toast, the list entry and the OS notification for a session you weren't looking at. */
 function call(t: TerminalState, kind: Attention, reminder = false): void {
   const state = useStore.getState()
+  const note = noteFor(t, kind, reminder)
+
+  // It always goes in the list; muted sessions and Do not disturb stay silent.
+  const quiet = note.muted || state.doNotDisturb
+  state.notify(note, { toast: !quiet })
+  if (quiet) return
+  window.api.notifyAttention(attentionRequest(note))
+}
+
+/** A call in the pane you have focused: only for Telegram, in case you have walked away. */
+function callSeen(t: TerminalState, kind: Attention): void {
+  const note = noteFor(t, kind, false)
+  if (note.muted || useStore.getState().doNotDisturb) return
+  window.api.notifyAttention({ ...attentionRequest(note), seen: true })
+}
+
+/** What the bell list keeps of a call. */
+type Note = Omit<AppNotification, 'id' | 'read'>
+
+/** Where a call comes from ("my project › Claude 2") and the conversation's title, or ''. */
+export function callPlace(t: TerminalState): { source: string; topic: string } {
+  const note = noteFor(t, 'finished', false)
+  return { source: notificationSource(note), topic: note.topic }
+}
+
+function noteFor(t: TerminalState, kind: Attention, reminder: boolean): Note {
+  const state = useStore.getState()
   const { workspaces, settings, appInfo } = state
   const where = locate(workspaces, t.key)
   const folder = where
@@ -100,15 +135,31 @@ function call(t: TerminalState, kind: Attention, reminder = false): void {
   const named = t.termTitle ? conversationTitle(t.termTitle) : ''
   const topic = named === 'Claude Code' ? '' : named
   const muted = isMuted(state, t)
-  const note = { key: t.key, kind, tab: t.title, folder, topic, at: Date.now(), reminder, muted }
+  return { key: t.key, kind, tab: t.title, folder, topic, at: Date.now(), reminder, muted }
+}
 
-  // It always goes in the list; muted sessions and Do not disturb stay silent.
-  const quiet = muted || state.doNotDisturb
-  state.notify(note, { toast: !quiet })
-  if (quiet) return
-  window.api.notifyAttention({
-    key: t.key,
-    title: `ClaudeHelper · ${notificationSource(note)}`,
-    body: notificationText(note)
-  })
+function attentionRequest(note: Note): AttentionRequest {
+  const source = notificationSource(note)
+  const req: AttentionRequest = {
+    key: note.key,
+    title: `ClaudeHelper · ${source}`,
+    body: notificationText(note),
+    event: note.reminder ? 'reminder' : note.kind,
+    source,
+    topic: note.topic
+  }
+  const state = useStore.getState()
+  // With remote control, Telegram shows the question with a button per option.
+  if (note.kind === 'asking' && state.settings?.telegramRemote) {
+    const question = getTerminal(note.key)?.question()
+    if (question) req.question = question
+  }
+  // A chat driven from Telegram gets its questions and whole reply there from remote control.
+  if (!note.reminder && state.terminals[note.key]?.telegramReply) req.skipTelegram = true
+  // Its topic in Telegram, when the bot has topics.
+  if (state.settings?.telegramEnabled) {
+    const topic = topicRef(note.key)
+    if (topic) req.telegramTopic = topic
+  }
+  return req
 }

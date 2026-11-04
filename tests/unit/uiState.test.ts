@@ -108,6 +108,16 @@ describe('sanitizeUiState', () => {
     expect(s.terminals[1]).not.toHaveProperty('muted')
   })
 
+  it("keeps a tab's Telegram topic only as a positive whole number", () => {
+    const topic = (telegramTopic: unknown): unknown =>
+      sanitizeUiState(state({ terminals: [claude('t1', A, { telegramTopic })] }))!.terminals[0]
+        .telegramTopic
+    expect(topic(77)).toBe(77)
+    expect(topic(-3)).toBeUndefined()
+    expect(topic('77')).toBeUndefined()
+    expect(topic(1.5)).toBeUndefined()
+  })
+
   it('keeps joined folders as pairs: two kept folders, each in one pair, size clamped', () => {
     const folder = (cwd: string, key: string, extra: object = {}): object => ({
       cwd,

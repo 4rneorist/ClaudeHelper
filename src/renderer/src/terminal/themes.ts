@@ -48,6 +48,44 @@ export const lightTheme: ITheme = {
   brightWhite: '#fafafa'
 }
 
+/**
+ * How far text has to stand out from its background. Claude Code colours diffs and code with
+ * exact colours for the theme it is set to, so on the other one some text all but disappears
+ * (near-white on the light theme). xterm darkens or lightens such text until it stands out this
+ * much. Light: the usual readable minimum (WCAG AA). Dark: lower, so its own grey text stays as
+ * it is and only what is close to invisible changes.
+ */
+export function minimumContrastFor(theme: ITheme | undefined): number {
+  return theme === lightTheme ? 4.5 : 3
+}
+
+/** Search highlights: every match, and the one you are on. Opaque, as decorations need. */
+export function searchDecorations(theme: ITheme | undefined): {
+  matchBackground: string
+  matchOverviewRuler: string
+  activeMatchBackground: string
+  activeMatchColorOverviewRuler: string
+} {
+  return theme === lightTheme
+    ? {
+        matchBackground: '#fde68a',
+        matchOverviewRuler: '#ca8a04',
+        activeMatchBackground: '#fdba74',
+        activeMatchColorOverviewRuler: '#ea580c'
+      }
+    : {
+        matchBackground: '#5c4a06',
+        matchOverviewRuler: '#facc15',
+        activeMatchBackground: '#9a3412',
+        activeMatchColorOverviewRuler: '#fb923c'
+      }
+}
+
+/** The brief highlight on a message you jumped to. */
+export function promptFlashColor(theme: ITheme | undefined): string {
+  return theme === lightTheme ? '#dbeafe' : '#1e3a5f'
+}
+
 export function fontFamilyFor(platform: string): string {
   switch (platform) {
     case 'win32':

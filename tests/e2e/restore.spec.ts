@@ -130,6 +130,10 @@ test('reopens folders, tabs, splits, sizes and conversations after a restart', a
   await expect(subTabs.nth(1)).toHaveAttribute('aria-selected', 'true')
   await waitFor(panel().locator('.pane').first(), `args=[--resume ${CONTINUED}]`)
 
+  // The tab not shown yet waits: its conversations resume only once it is opened.
+  await expect(subTabs.nth(0).locator('.status-dot')).toHaveClass(/dormant/)
+  await expect(subTabs.nth(0)).toHaveAttribute('aria-selected', 'false')
+
   // The split came back with its proportions; the chatted-in conversation resumes, the empty
   // one starts again under the same id.
   await subTabs.nth(0).click()

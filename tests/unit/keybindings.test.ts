@@ -91,6 +91,78 @@ describe('folder tab shortcuts', () => {
   })
 })
 
+describe('search, prompt jumps and snipping', () => {
+  it('searches with Ctrl+F or Ctrl+Shift+F, and Cmd+F on macOS', () => {
+    for (const platform of ['win32', 'linux']) {
+      expect(classifyKey(key('f', { ctrlKey: true }), platform, false).type).toBe('search')
+      expect(classifyKey(key('F', { ctrlKey: true, shiftKey: true }), platform, false).type).toBe(
+        'search'
+      )
+    }
+    expect(classifyKey(key('f', { metaKey: true }), 'darwin', false).type).toBe('search')
+    expect(classifyKey(key('f', { ctrlKey: true }), 'darwin', false).type).toBe('pass')
+  })
+
+  it('jumps between prompts with Ctrl+Up/Down, and Cmd+Up/Down on macOS', () => {
+    for (const platform of ['win32', 'linux']) {
+      expect(classifyKey(key('ArrowUp', { ctrlKey: true }), platform, false).type).toBe(
+        'prevPrompt'
+      )
+      expect(classifyKey(key('ArrowDown', { ctrlKey: true }), platform, false).type).toBe(
+        'nextPrompt'
+      )
+      // Shift+arrows and plain arrows stay with claude.
+      const shifted = key('ArrowUp', { ctrlKey: true, shiftKey: true })
+      expect(classifyKey(shifted, platform, false).type).toBe('pass')
+      expect(classifyKey(key('ArrowUp'), platform, false).type).toBe('pass')
+    }
+    expect(classifyKey(key('ArrowUp', { metaKey: true }), 'darwin', false).type).toBe('prevPrompt')
+    expect(classifyKey(key('ArrowDown', { metaKey: true }), 'darwin', false).type).toBe(
+      'nextPrompt'
+    )
+  })
+
+  it('snips the screen with Ctrl+Shift+S, and Cmd+Shift+S on macOS; Ctrl+S stays claude’s', () => {
+    expect(classifyKey(key('S', { ctrlKey: true, shiftKey: true }), 'win32', false).type).toBe(
+      'snip'
+    )
+    expect(classifyKey(key('s', { ctrlKey: true }), 'win32', false).type).toBe('pass')
+    expect(classifyKey(key('S', { metaKey: true, shiftKey: true }), 'darwin', false).type).toBe(
+      'snip'
+    )
+  })
+})
+
+describe('non-Latin keyboard layouts', () => {
+  // With a Ukrainian or Russian layout, `key` is the Cyrillic letter; `code` names the physical key.
+  const cyr = (k: string, code: string, mods: Partial<KeyInfo> = {}, type = 'keydown'): KeyInfo =>
+    key(k, { code, ...mods }, type)
+
+  it('copies the selection with Ctrl+C, and still interrupts claude without one', () => {
+    expect(classifyKey(cyr('с', 'KeyC', { ctrlKey: true }), 'win32', true).type).toBe('copy')
+    expect(classifyKey(cyr('с', 'KeyC', { ctrlKey: true }), 'win32', false).type).toBe('pass')
+    expect(classifyKey(cyr('с', 'KeyC', { ctrlKey: true }, 'keyup'), 'win32', true).type).toBe(
+      'block'
+    )
+  })
+
+  it('pastes with Ctrl+V and runs the Ctrl+Shift app shortcuts', () => {
+    expect(classifyKey(cyr('м', 'KeyV', { ctrlKey: true }), 'win32', false).type).toBe('paste')
+    const ctrlShift = { ctrlKey: true, shiftKey: true }
+    expect(classifyKey(cyr('Е', 'KeyT', ctrlShift), 'win32', false).type).toBe('newTerminal')
+    expect(classifyKey(cyr('О', 'KeyJ', ctrlShift), 'linux', false).type).toBe('nextWaiting')
+    expect(classifyKey(cyr('с', 'KeyC', { metaKey: true }), 'darwin', true).type).toBe('copy')
+  })
+
+  it('keeps the typed letter on Latin layouts such as AZERTY', () => {
+    // AZERTY: the key labelled A sits where QWERTY has Q.
+    expect(classifyKey(key('a', { code: 'KeyQ', ctrlKey: true }), 'win32', false).type).toBe('pass')
+    expect(classifyKey(key('v', { code: 'KeyV', ctrlKey: true }), 'win32', false).type).toBe(
+      'paste'
+    )
+  })
+})
+
 describe('classifyKey on macOS', () => {
   it('uses Cmd for copy/paste/tabs and leaves Ctrl keys to claude', () => {
     expect(classifyKey(key('c', { metaKey: true }), 'darwin', true).type).toBe('copy')

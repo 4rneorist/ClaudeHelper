@@ -3,6 +3,7 @@ import { MODE_LABELS } from '../constants'
 import { activeTerminalKey, dotStatus, useStore } from '../store'
 import type { ClaudeActivity } from '../terminal/claudeActivity'
 import { waitingTerminals } from '../waiting'
+import { JiraChip } from './JiraChip'
 
 const DOING: Record<ClaudeActivity, string> = {
   working: 'working',
@@ -45,7 +46,9 @@ export function StatusBar(): React.JSX.Element {
       ? `${doing} · pid ${terminal.session?.pid}`
       : terminal.status === 'exited'
         ? `exited (${terminal.exitCode})`
-        : terminal.status
+        : terminal.status === 'dormant'
+          ? 'not resumed yet'
+          : terminal.status
 
   return (
     <footer className="statusbar">
@@ -62,6 +65,7 @@ export function StatusBar(): React.JSX.Element {
           {git.dirty && '*'}
         </span>
       )}
+      {git && <JiraChip branch={git.branch} className="status-jira" />}
       <span className={`status-state ${dotStatus(terminal)}`}>{state}</span>
       {terminal.termTitle && (
         <span className="status-title muted" title={terminal.termTitle}>

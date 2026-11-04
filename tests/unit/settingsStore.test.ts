@@ -2,7 +2,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { DEFAULT_SETTINGS, MAX_RECENT, SettingsStore } from '../../src/main/settingsStore'
+import {
+  DEFAULT_SETTINGS,
+  MAX_AWAY_MINUTES,
+  MAX_RECENT,
+  SettingsStore,
+  type SecretCipher
+} from '../../src/main/settingsStore'
+import { TELEGRAM_ALWAYS } from '../../src/shared/ipc'
 
 describe('SettingsStore', () => {
   let dir: string
@@ -32,6 +39,26 @@ describe('SettingsStore', () => {
     expect(s.theme).toBe(DEFAULT_SETTINGS.theme)
     expect(s.experimentalConptyDll).toBe(DEFAULT_SETTINGS.experimentalConptyDll)
     expect(s).not.toHaveProperty('extra')
+  })
+
+  it('resumes restored tabs lazily unless switched off', () => {
+    const store = new SettingsStore(file)
+    expect(store.get().lazyRestore).toBe(true)
+    expect(store.update({ lazyRestore: 'no' }).lazyRestore).toBe(true)
+    expect(store.update({ lazyRestore: false }).lazyRestore).toBe(false)
+  })
+
+  it('shows no Jira ticket until switched on, and keeps only http(s) ticket URLs', () => {
+    const store = new SettingsStore(file)
+    expect(store.get()).toMatchObject({ jiraEnabled: false, jiraUrl: '' })
+    const url = 'https://acme.atlassian.net/browse/{key}'
+    expect(store.update({ jiraEnabled: true, jiraUrl: `  ${url} ` })).toMatchObject({
+      jiraEnabled: true,
+      jiraUrl: url
+    })
+    expect(store.update({ jiraUrl: 'javascript:alert(1)//{key}' }).jiraUrl).toBe(url)
+    expect(store.update({ jiraUrl: 'not a url' }).jiraUrl).toBe(url)
+    expect(store.update({ jiraUrl: '' }).jiraUrl).toBe('')
   })
 
   it('does not let update() overwrite recent folders', () => {
@@ -173,6 +200,101 @@ describe('SettingsStore', () => {
     ])
     expect(store.update({ mutedFolders: [] }).mutedFolders).toEqual(['C:\\Projects\\Api'])
     expect(new SettingsStore(file, 'win32').get().mutedFolders).toEqual(['C:\\Projects\\Api'])
+  })
+
+  const TOKEN = '123456789:AAEabcdefghijklmnopqrstuvwxyz012345'
+  // Stands in for safeStorage: reversible, but not the token itself.
+  const cipher: SecretCipher = {
+    encrypt: (plain) => `x${Buffer.from(plain).toString('hex')}`,
+    decrypt: (stored) => {
+      if (!stored.startsWith('x')) throw new Error('not ours')
+      return Buffer.from(stored.slice(1), 'hex').toString()
+    }
+  }
+
+  it('takes a background picture only as a picture file by its full path', () => {
+    const store = new SettingsStore(file)
+    expect(store.get()).toMatchObject({
+      terminalPicture: '',
+      terminalPictureStrength: 25,
+      terminalPictureFit: 'fill'
+    })
+    const picture = path.join(dir, 'sea view.JPG')
+    expect(store.update({ terminalPicture: ` ${picture} ` }).terminalPicture).toBe(picture)
+    expect(store.update({ terminalPicture: 'sea.png' }).terminalPicture).toBe(picture)
+    expect(store.update({ terminalPicture: path.join(dir, 'run.exe') }).terminalPicture).toBe(
+      picture
+    )
+    expect(store.update({ terminalPicture: '' }).terminalPicture).toBe('')
+    expect(store.update({ terminalPictureStrength: 1 }).terminalPictureStrength).toBe(5)
+    expect(store.update({ terminalPictureStrength: 250 }).terminalPictureStrength).toBe(100)
+    expect(store.update({ terminalPictureFit: 'tile' }).terminalPictureFit).toBe('tile')
+    expect(store.update({ terminalPictureFit: 'zoom' }).terminalPictureFit).toBe('tile')
+  })
+
+  it('keeps Telegram off until switched on, and only a usable token and chat ID', () => {
+    const store = new SettingsStore(file, 'linux')
+    expect(store.get()).toMatchObject({
+      telegramEnabled: false,
+      telegramBotToken: '',
+      telegramChatId: '',
+      telegramAwayMinutes: 5,
+      telegramRemote: false
+    })
+    expect(store.update({ telegramRemote: 'yes' }).telegramRemote).toBe(false)
+    expect(store.update({ telegramRemote: true }).telegramRemote).toBe(true)
+    const s = store.update({
+      telegramEnabled: true,
+      telegramBotToken: ` ${TOKEN} `,
+      telegramChatId: ' -1001234567890 ',
+      telegramAwayMinutes: 500
+    })
+    expect(s).toMatchObject({
+      telegramEnabled: true,
+      telegramBotToken: TOKEN,
+      telegramChatId: '-1001234567890',
+      telegramAwayMinutes: MAX_AWAY_MINUTES
+    })
+    // A token goes into the Bot API's URL path: nothing else gets in.
+    expect(store.update({ telegramBotToken: '123:abc/../x' }).telegramBotToken).toBe(TOKEN)
+    expect(store.update({ telegramChatId: 'my chat' }).telegramChatId).toBe('-1001234567890')
+    expect(store.update({ telegramChatId: '@my_channel' }).telegramChatId).toBe('@my_channel')
+    expect(store.update({ telegramAwayMinutes: 0 }).telegramAwayMinutes).toBe(0)
+    expect(store.update({ telegramAwayMinutes: -5 }).telegramAwayMinutes).toBe(TELEGRAM_ALWAYS)
+    expect(store.update({ telegramBotToken: '', telegramChatId: '' })).toMatchObject({
+      telegramBotToken: '',
+      telegramChatId: ''
+    })
+  })
+
+  it('encrypts the bot token in the settings file', () => {
+    new SettingsStore(file, 'linux', cipher).update({ telegramBotToken: TOKEN })
+    const onDisk = readFileSync(file, 'utf8')
+    expect(onDisk).not.toContain(TOKEN)
+    expect(JSON.parse(onDisk).telegramBotToken).toMatch(/^enc:x/)
+    expect(new SettingsStore(file, 'linux', cipher).get().telegramBotToken).toBe(TOKEN)
+  })
+
+  it('leaves no token in the file without one, and keeps it plain without a cipher', () => {
+    new SettingsStore(file, 'linux', cipher).update({ fontSize: 15 })
+    expect(JSON.parse(readFileSync(file, 'utf8')).telegramBotToken).toBe('')
+
+    new SettingsStore(file, 'linux').update({ telegramBotToken: TOKEN })
+    expect(JSON.parse(readFileSync(file, 'utf8')).telegramBotToken).toBe(TOKEN)
+    // A plain token from before still loads when encryption becomes available.
+    expect(new SettingsStore(file, 'linux', cipher).get().telegramBotToken).toBe(TOKEN)
+  })
+
+  it("drops a token that can't be decrypted, keeping the other settings", () => {
+    mkdirSync(path.dirname(file), { recursive: true })
+    const encrypted = { fontSize: 18, telegramBotToken: 'enc:garbage' }
+    writeFileSync(file, JSON.stringify(encrypted))
+    expect(new SettingsStore(file, 'linux', cipher).get()).toMatchObject({
+      fontSize: 18,
+      telegramBotToken: ''
+    })
+    // Encrypted elsewhere, and no way to decrypt here.
+    expect(new SettingsStore(file, 'linux').get().telegramBotToken).toBe('')
   })
 
   it('recovers from a corrupt settings file', () => {

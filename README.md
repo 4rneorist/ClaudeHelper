@@ -2,24 +2,33 @@
 
 A desktop app for **Windows, macOS and Linux** that runs the real **Claude Code CLI** in tabs and split panes. Pick a folder and a Claude session starts there. Close the app, and next time everything comes back: folders, tabs, splits with their sizes, the window, and each tab's conversation.
 
+It tells you when a session is done or needs your answer: with a sound, on its tab, on the taskbar, and, if you like, on your phone through your own Telegram bot, where you can answer Claude, send it prompts and read its replies.
+
 **[Download the latest release](https://github.com/4rneorist/ClaudeHelper/releases/latest).** It has installers for Windows (`.exe`), macOS (`.dmg`, Apple Silicon) and Linux (`.AppImage` and `.deb`). You also need the Claude Code CLI, see [Install](#install).
+
+### New since 1.0.1
+
+- **Claude on your phone.** Your own Telegram bot (optional) says when a session finishes or needs you, headed `✅ IDLE`, `🔔 NEED YOUR ATTENTION` or `⏰ STILL NEEDS YOUR ATTENTION`. With remote control on, you can answer Claude's questions with a tap (or with numbers and your own words where it takes several answers), send prompts, read what a chat shows, and open new chats. Claude's whole reply comes back when it is done, formatted for a phone, tables included. With Threaded Mode on for the bot, each session gets its own topic.
+- **Bookmarked prompts.** Keep the prompts you use again in folders and subfolders, in a column on the right. One click puts a prompt into the session; the right-click menu bookmarks selected text and pastes bookmarks.
+- **Search and jump.** Ctrl+F searches the scrollback; Ctrl+↑ and Ctrl+↓ jump between your messages to Claude.
+- **Open files from the output**, like in VS Code: Ctrl+click a path that Claude or a shell printed.
+- **Send text to another session** from the right-click menu, and **snip the screen into the prompt** with Ctrl+Shift+S.
+- **Jira ticket from the branch** on the folder tab (optional), one click away.
+- **A picture behind the terminals**, as in Windows Terminal, with how much it shows and how it fits. Text that would get lost on it, or on the light theme, is darkened or lightened until it reads.
 
 ### What's new in 1.0.1
 
 - **See what each Claude is doing.** The status dot is green and pulsing while Claude works, yellow when it's done and waits for your next prompt, and red and pulsing when it needs your answer (a permission prompt, a question, a plan to approve). A folder tab is red if any Claude in it needs you, green if any is still working, and yellow only when all are idle.
 - **Never miss a session that needs you.** A sound for "finished" and another for "needs your answer", every time. For a session you aren't looking at, its tab is underlined, a toast says where it's from, and the bell at the top right keeps the list. With the window in the background or minimized, the taskbar button turns red or yellow and Windows shows a notification.
-- **Away from the computer?** Optionally, your own Telegram bot sends you a message when a session finishes or needs your answer. With remote control on, you can also answer Claude's questions from your phone, send prompts, read a chat and open new ones.
 - **Get there fast.** Ctrl+Shift+J jumps to the next session that waits, the status bar counts them ("● 1 needs your answer · ● 2 finished"), and hovering a tab previews its last lines.
 - **Less noise when you want it.** Mute a session or a folder, switch on Do not disturb, choose the sounds and their volume, and set how often a question that is still waiting reminds you.
 - **Name and color your tabs.** ⚙ on a folder or session tab sets its title and color; drag tabs to reorder them.
 - **Two folders side by side.** "Join sessions to" in a folder's settings shows two folders next to each other, each with its own tabs.
-- **Bookmarked prompts.** Keep the prompts you use again in folders and subfolders, in a column on the right. One click puts a prompt into the session; the right-click menu bookmarks selected text and pastes bookmarks.
 - **Git branch on each folder tab**, with `*` when there are uncommitted changes.
-- **A picture behind the terminals**, as in Windows Terminal: Settings → Background picture, with how much it shows and whether it fills, fits, stretches or tiles. Text that would get lost on it, or on the light theme, is darkened or lightened until it reads.
 
 Details for each are under [Features](#features).
 
-![ClaudeHelper with two colored folder tabs, ClaudeHelper in blue and Calculator in green. The open one is split: Claude in ClaudeHelper on the left, Claude docked from the Calculator folder top right, PowerShell running the tests bottom right](docs/screenshots/main.png)
+![ClaudeHelper with two colored folder tabs, ClaudeHelper in blue and Calculator in green. ClaudeHelper is split: on the left a prompt being written, on the right Claude's answer to a question about the code. The bookmarks column is open on the right](docs/screenshots/main.png)
 
 ## Why ClaudeHelper
 
@@ -31,24 +40,34 @@ Details for each are under [Features](#features).
 - **Knows when Claude needs you.** Each tab shows whether Claude works, is done or waits for your answer, with a sound for each. Sessions you aren't looking at get a toast, an entry under the bell and a red or yellow taskbar button, and Ctrl+Shift+J takes you there.
 - **Old conversations a click away.** The start screen lists the last conversations in each recent folder; click one to resume it.
 - **A shell next to Claude.** PowerShell, Command Prompt, Git Bash and WSL on Windows; your login shell, bash, zsh and fish on macOS and Linux.
+- **Answer from anywhere.** With your own Telegram bot, Claude's questions, calls and replies reach your phone, and you can answer and send prompts from there. Only your own chat with the bot is obeyed.
+- **Prompts you use again, at hand.** Bookmarked prompts in folders, a search over the scrollback, and file paths you can click open.
 
 ## Screenshots
 
-**Start screen.** Recent folders, each with its last conversations.
+**Start screen.** Recent folders, each with its last conversations; the bookmarks column on the right.
 
-![Start screen with recent folders. Calculator is expanded and lists its last four conversations](docs/screenshots/start.png)
+![Start screen with recent folders. ClaudeHelper is expanded and lists its last five conversations. The bookmarks column on the right has the folders Reviews and Tests and two prompts](docs/screenshots/start.png)
 
 **New terminal menu (▾).** A new, continued or resumed Claude conversation, or any shell installed on the machine.
 
-![The new terminal menu: New conversation, Continue last, Resume, and the shells Windows PowerShell, Command Prompt, Git Bash and WSL](docs/screenshots/new-terminal-menu.png)
+![The new terminal menu: New conversation, Continue last, Resume, and the shells installed on the machine](docs/screenshots/new-terminal-menu.png)
 
-**Settings.** Restoring on start, theme, font size and which `claude` to run. (Newer versions also have the notification, sound and reminder settings.)
+**Folder settings (⚙).** Title, color, muting, and joining another folder to see both side by side.
 
-![Settings dialog with the claude executable, font size, theme and "Reopen folders, tabs and splits from last time"](docs/screenshots/settings.png)
+![The settings of the ClaudeHelper folder tab: title, ten preset colors and a custom one, mute, and Join sessions to](docs/screenshots/folder-settings.png)
 
-**Tab colors.** Pick a color in a folder's or terminal's settings (⚙). (The screenshot shows the older color-only picker; ⚙ now also has the title, muting and, for folders, joining.)
+**Settings.** Which `claude` to run, font size, theme, a background picture, restoring on start, notifications and sounds.
 
-![The color picker under the green Calculator tab: ten preset colors, a custom color and No color](docs/screenshots/tab-colors.png)
+![The top of the Settings dialog: the claude executable, font size, theme, background picture and reopening last time's folders](docs/screenshots/settings.png)
+
+**Telegram.** Your own bot, remote control, and a topic per session.
+
+![The Telegram part of Settings: bot token, chat ID, when to send, remote control, and "Topics per session" saying Threaded Mode is on](docs/screenshots/telegram-settings.png)
+
+**A picture behind the terminals.**
+
+![The split sessions with a dark blue wallpaper faintly behind the text](docs/screenshots/picture.png)
 
 ## Install
 

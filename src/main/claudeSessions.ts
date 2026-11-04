@@ -1,7 +1,7 @@
 import { open, readdir, readFile, stat } from 'fs/promises'
 import path from 'path'
 import { StringDecoder } from 'string_decoder'
-import type { PastSession } from '../shared/ipc'
+import type { ClaudeTurnResult, PastSession } from '../shared/ipc'
 import { samePath } from '../shared/paths'
 
 // Claude Code stores each conversation as <config>/projects/<encoded cwd>/<session id>.jsonl.
@@ -30,7 +30,8 @@ interface ParsedLine {
   cwd?: string
   aiTitle?: string
   agentName?: string
-  message?: { content?: unknown }
+  timestamp?: string
+  message?: { content?: unknown; stop_reason?: unknown }
 }
 
 function parseLine(line: string): ParsedLine | null {
@@ -125,10 +126,10 @@ async function readHead(file: string): Promise<HeadInfo & { lines: string[] }> {
   }
 }
 
-async function readTailLines(file: string, size: number): Promise<string[]> {
+async function readTailLines(file: string, size: number, max = TAIL_BYTES): Promise<string[]> {
   const handle = await open(file, 'r')
   try {
-    const length = Math.min(size, TAIL_BYTES)
+    const length = Math.min(size, max)
     const buffer = Buffer.alloc(length)
     await handle.read(buffer, 0, length, size - length)
     const lines = buffer.toString('utf8').split('\n')
@@ -203,6 +204,85 @@ export async function listPastSessions(
 
 export function transcriptPath(configDir: string, cwd: string, sessionId: string): string {
   return path.join(configDir, 'projects', projectDirName(cwd), `${sessionId}.jsonl`)
+}
+
+/** Claude's last turn: from your last prompt to now. */
+export interface ClaudeTurn {
+  /** When that prompt was sent (epoch ms); 0 when it isn't in what was read. */
+  promptAt: number
+  /** What Claude wrote in it, between its tool calls and at the end (markdown). */
+  text: string
+  /** Claude ended it itself: it isn't still going, nor was it stopped. */
+  complete: boolean
+}
+
+/** A turn's tool calls and their output can be large: this much of a transcript's end is read. */
+const TURN_BYTES = 4 * 1024 * 1024
+
+/** The last turn in a transcript's lines; null when there is none. */
+export function lastTurn(lines: string[]): ClaudeTurn | null {
+  const texts: string[] = []
+  let complete: boolean | null = null
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const record = parseLine(lines[i])
+    if (!record || record.isSidechain) continue
+    if (record.type === 'assistant') {
+      // Claude's latest message says whether it ended the turn.
+      complete ??= record.message?.stop_reason === 'end_turn'
+      const content = record.message?.content
+      const blocks = Array.isArray(content) ? content : [content]
+      for (const block of blocks.reverse()) {
+        const text =
+          typeof block === 'string'
+            ? block
+            : (block as { type?: unknown; text?: unknown } | null)?.type === 'text'
+              ? (block as { text?: unknown }).text
+              : null
+        if (typeof text === 'string' && text.trim()) texts.unshift(text.trim())
+      }
+      continue
+    }
+    if (promptText(record) !== null) {
+      const at = Date.parse(record.timestamp ?? '')
+      return { promptAt: Number.isNaN(at) ? 0 : at, text: texts.join('\n\n'), complete: !!complete }
+    }
+  }
+  return texts.length ? { promptAt: 0, text: texts.join('\n\n'), complete: !!complete } : null
+}
+
+/** A prompt recorded this much before it was sent still counts as that prompt. */
+const PROMPT_SLACK_MS = 1000
+
+/**
+ * The last turn once it has ended, for a prompt sent at `since` (0: any turn). Claude writes it
+ * as it goes, so a turn that hasn't ended yet is read again a few times; one that started before
+ * `since` is an earlier one (that prompt is still queued).
+ */
+export async function finishedTurn(
+  read: () => Promise<ClaudeTurn | null>,
+  since: number,
+  opts: { tries: number; delayMs: number } = { tries: 6, delayMs: 500 }
+): Promise<ClaudeTurnResult> {
+  for (let i = 0; ; i++) {
+    const turn = await read()
+    if (since && turn?.promptAt && turn.promptAt < since - PROMPT_SLACK_MS) {
+      return { kind: 'earlier' }
+    }
+    if (turn?.complete || i >= opts.tries) {
+      return turn ? { kind: 'turn', text: turn.text } : { kind: 'unknown' }
+    }
+    await new Promise((resolve) => setTimeout(resolve, opts.delayMs))
+  }
+}
+
+/** The last turn of a transcript file; null when it can't be read or has none. */
+export async function readLastTurn(file: string): Promise<ClaudeTurn | null> {
+  try {
+    const { size } = await stat(file)
+    return lastTurn(await readTailLines(file, size, TURN_BYTES))
+  } catch {
+    return null
+  }
 }
 
 /** One running claude process, from Claude Code's registry in <config>/sessions/<pid>.json. */

@@ -218,13 +218,13 @@ describe('finished and asking', () => {
     state().reportActivity(key, 'working', true)
     now += MIN_WORK_MS
     state().reportActivity(key, 'idle', true)
-    expect(t(key).lastCall).toEqual({ kind: 'finished', at: now })
+    expect(t(key).lastCall).toEqual({ kind: 'finished', at: now, seen: true })
     expect(t(key).attention).toBeUndefined()
 
     state().reportActivity(key, 'working', true)
     now += 10
     state().reportActivity(key, 'asking', true)
-    expect(t(key).lastCall).toEqual({ kind: 'asking', at: now })
+    expect(t(key).lastCall).toEqual({ kind: 'asking', at: now, seen: true })
 
     // Answering it, or a blink of work, is no call.
     const answered = t(key).lastCall
@@ -279,12 +279,13 @@ describe('finished and asking', () => {
     expect(t(key).attention).toBeUndefined()
   })
 
-  it('shows what needs you most on a tab: asking, then errors, then idle', () => {
+  it('shows what needs you most on a tab: asking, then errors, then working, then idle', () => {
     const [a, b, c, d] = [runningClaude(), runningClaude(), runningClaude(), runningClaude()]
     state().reportActivity(a, 'working', false)
     state().reportActivity(b, 'idle', false)
     const tabOf = (...keys: string[]): string => combinedStatus(keys.map(t))
-    expect(tabOf(a, b)).toBe('idle')
+    expect(tabOf(a, b)).toBe('working')
+    expect(tabOf(b)).toBe('idle')
     state().patchTerminal(c, { status: 'error' })
     expect(tabOf(a, b, c)).toBe('error')
     state().reportActivity(d, 'asking', false)

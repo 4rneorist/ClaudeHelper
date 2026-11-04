@@ -1,15 +1,16 @@
-import { app, BrowserWindow, dialog, Menu, shell } from 'electron'
+import { app, BrowserWindow, dialog, Menu, safeStorage, shell } from 'electron'
 import { homedir, release } from 'os'
 import { join } from 'path'
 import { spawn } from 'node-pty'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { IPC, type AppInfo } from '../shared/ipc'
+import { BookmarksStore } from './bookmarksStore'
 import { loadLoginShellEnv } from './claudeResolver'
 import { claudeConfigDir } from './claudeSessions'
 import { registerIpc } from './ipc'
 import { SessionManager } from './sessionManager'
-import { SettingsStore } from './settingsStore'
+import { SettingsStore, type SecretCipher } from './settingsStore'
 import { watchRegistry } from './registryWatcher'
 import { UiStateStore } from './uiState'
 import { isSafeExternalUrl } from './validation'
@@ -173,7 +174,19 @@ app.whenReady().then(async () => {
     e2e: process.env.CLAUDE_HELPER_E2E === '1'
   }
 
-  settings = new SettingsStore(join(app.getPath('userData'), 'settings.json'))
+  // The Telegram bot token is kept encrypted for this OS user (DPAPI, Keychain, libsecret).
+  const cipher: SecretCipher | undefined = safeStorage.isEncryptionAvailable()
+    ? {
+        encrypt: (plain) => safeStorage.encryptString(plain).toString('base64'),
+        decrypt: (stored) => safeStorage.decryptString(Buffer.from(stored, 'base64'))
+      }
+    : undefined
+  settings = new SettingsStore(
+    join(app.getPath('userData'), 'settings.json'),
+    process.platform,
+    cipher
+  )
+  const bookmarks = new BookmarksStore(join(app.getPath('userData'), 'bookmarks.json'))
   uiState = new UiStateStore(join(app.getPath('userData'), 'ui-state.json'), () =>
     claudeConfigDir(launchEnv, homedir())
   )
@@ -188,6 +201,7 @@ app.whenReady().then(async () => {
     getWindow: () => mainWindow,
     sessions,
     settings,
+    bookmarks,
     getEnv: () => launchEnv,
     homedir: homedir(),
     appInfo,

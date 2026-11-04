@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  checkContextMenuRequest,
+  checkFileLinkRequest,
   checkSpec,
   checkStartRequest,
   isDimension,
@@ -100,5 +102,57 @@ describe('checkSpec session ids', () => {
     expect(checkSpec({ kind: 'claude', mode: 'continue', sessionId: ID })).toBeNull()
     expect(checkSpec({ kind: 'claude', mode: 'new', sessionId: 'nope' })).toBeNull()
     expect(checkSpec({ kind: 'claude', mode: 'resume', resumeId: ID, sessionId: ID })).toBeNull()
+  })
+})
+
+describe('checkContextMenuRequest', () => {
+  const target = { key: 'term-12', label: 'Claude 2 · my project' }
+
+  it('accepts the selection flags and the sessions to send to', () => {
+    expect(
+      checkContextMenuRequest({ hasSelection: true, canSnip: false, targets: [target] })
+    ).toEqual({ hasSelection: true, canSnip: false, targets: [target] })
+  })
+
+  it('drops targets with odd keys, cuts long labels and caps the list', () => {
+    const r = checkContextMenuRequest({
+      hasSelection: false,
+      canSnip: true,
+      targets: [
+        { key: '../evil', label: 'x' },
+        { key: 'term-1', label: 42 },
+        { key: 'term-2', label: 'y'.repeat(500) },
+        ...Array.from({ length: 80 }, (_, i) => ({ key: `term-${i + 10}`, label: 'z' }))
+      ]
+    })
+    expect(r.targets[0]).toEqual({ key: 'term-2', label: 'y'.repeat(200) })
+    expect(r.targets).toHaveLength(50)
+    expect(r.canSnip).toBe(true)
+  })
+
+  it('treats anything malformed as an empty request', () => {
+    expect(checkContextMenuRequest(null)).toEqual({
+      hasSelection: false,
+      canSnip: false,
+      targets: []
+    })
+  })
+})
+
+describe('checkFileLinkRequest', () => {
+  it('takes a folder and the paths found in a line', () => {
+    expect(checkFileLinkRequest(abs, ['src/x.ts', '~/a.png'])).toEqual({
+      cwd: abs,
+      paths: ['src/x.ts', '~/a.png']
+    })
+  })
+
+  it('refuses a relative folder, odd paths and too many of them', () => {
+    expect(checkFileLinkRequest('work', ['a.ts'])).toBeNull()
+    expect(checkFileLinkRequest(abs, 'a.ts')).toBeNull()
+    expect(checkFileLinkRequest(abs, [42])).toBeNull()
+    expect(checkFileLinkRequest(abs, ['a\0b'])).toBeNull()
+    expect(checkFileLinkRequest(abs, ['x'.repeat(2000)])).toBeNull()
+    expect(checkFileLinkRequest(abs, Array(51).fill('a.ts'))).toBeNull()
   })
 })

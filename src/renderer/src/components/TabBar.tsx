@@ -1,5 +1,5 @@
 import { Fragment, useContext, useState } from 'react'
-import { closeWorkspace, tabAnchor, toggleTabSettings } from '../actions'
+import { closeWorkspace, tabAnchor, toggleBookmarks, toggleTabSettings } from '../actions'
 import { endDrag, startDrag } from '../dnd'
 import { leaves } from '../layout'
 import {
@@ -12,6 +12,8 @@ import {
 } from '../store'
 import { findFolderColor, tabColors } from '../tabColors'
 import { ThemeContext } from '../themeContext'
+import { JiraChip } from './JiraChip'
+import { BookmarkIcon } from './BookmarksPanel'
 import { BellIcon, NotificationBell } from './Notifications'
 import { isFolderMuted } from '../waiting'
 
@@ -23,6 +25,7 @@ const STATUS_LABELS: Record<string, string> = {
   starting: 'Starting',
   exited: 'Exited',
   error: 'Failed to start',
+  dormant: 'Not resumed yet, starts when you open it',
   none: 'Not started'
 }
 
@@ -38,6 +41,7 @@ export function TabBar(): React.JSX.Element {
   const activeWorkspace = useStore((s) => s.activeWorkspace)
   const newStartWorkspace = useStore((s) => s.newStartWorkspace)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+  const bookmarksOpen = useStore((s) => s.settings?.bookmarksOpen ?? false)
   const folderColors = useStore((s) => s.settings?.folderColors)
   const platform = useStore((s) => s.appInfo?.platform ?? '')
   const shown = pairOf(workspaces, activeWorkspace)
@@ -72,6 +76,15 @@ export function TabBar(): React.JSX.Element {
         </button>
       </div>
       <NotificationBell />
+      <button
+        className={`icon-button${bookmarksOpen ? ' pressed' : ''}`}
+        aria-label="Bookmarks"
+        title={bookmarksOpen ? 'Hide bookmarks' : 'Bookmarked prompts'}
+        aria-pressed={bookmarksOpen}
+        onClick={() => toggleBookmarks()}
+      >
+        <BookmarkIcon />
+      </button>
       <button
         className="icon-button"
         aria-label="Settings"
@@ -183,6 +196,7 @@ function WorkspaceTab({
           {git.dirty && '*'}
         </span>
       )}
+      {git && <JiraChip branch={git.branch} className="tab-jira" />}
       {muted && (
         <span className="tab-muted" title="Muted: no sounds, toasts or notifications">
           <BellIcon off size={12} />

@@ -27,6 +27,8 @@ export interface SavedTerminal {
   spec: TerminalSpec
   /** Claude conversation to resume. */
   claudeSessionId?: string
+  /** Its topic in your Telegram chat with the bot (a thread), when it has one. */
+  telegramTopic?: number
   /** Runtime only: lets main ask Claude Code which conversation the process has open now. */
   pid?: number
   startedAt?: number

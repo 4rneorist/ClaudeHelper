@@ -3,6 +3,8 @@ import { focusActiveTerminal, runShortcut } from './actions'
 import { startAttention } from './attention'
 import { startGitPolling } from './gitPolling'
 import { startPersistence } from './persist'
+import { startTelegramCommands } from './telegramCommands'
+import { BookmarksPanel } from './components/BookmarksPanel'
 import { SettingsDialog } from './components/SettingsDialog'
 import { StatusBar } from './components/StatusBar'
 import { TabBar } from './components/TabBar'
@@ -23,7 +25,9 @@ const APP_SHORTCUTS = new Set([
   'nextFolder',
   'prevFolder',
   'nextWaiting',
-  'zoom'
+  'zoom',
+  'search',
+  'snip'
 ])
 
 function App(): React.JSX.Element {
@@ -34,6 +38,7 @@ function App(): React.JSX.Element {
   const activeTerminal = useStore(activeTerminalKey)
   const platform = useStore((s) => s.appInfo?.platform ?? '')
   const themeSetting = useStore((s) => s.settings?.theme)
+  const bookmarksOpen = useStore((s) => s.settings?.bookmarksOpen ?? false)
   const resolvedTheme = useResolvedTheme(themeSetting)
 
   useEffect(() => {
@@ -41,6 +46,7 @@ function App(): React.JSX.Element {
     void init().then(() => {
       startPersistence()
       startAttention()
+      startTelegramCommands()
       startGitPolling()
     })
   }, [init])
@@ -99,31 +105,34 @@ function App(): React.JSX.Element {
     <ThemeContext.Provider value={resolvedTheme}>
       <div className="app">
         <TabBar />
-        <main className="workspace">
-          {workspaces.map((ws) => {
-            // Panels stay in tab order (moving them would restart their terminals); a joined
-            // pair is placed left and right by position instead.
-            const side = shown.length > 1 ? shown.indexOf(ws.key) : -1
-            return (
-              <div
-                key={ws.key}
-                className="workspace-panel"
-                hidden={!shown.includes(ws.key)}
-                role="tabpanel"
-                style={
-                  side === 0
-                    ? { right: `${(1 - joinSize) * 100}%` }
-                    : side === 1
-                      ? { left: `${joinSize * 100}%` }
-                      : undefined
-                }
-              >
-                <WorkspaceView workspace={ws} visible={shown.includes(ws.key)} />
-              </div>
-            )
-          })}
-          {shown.length > 1 && <FolderSplitter left={shown[0]} size={joinSize} />}
-        </main>
+        <div className="app-body">
+          <main className="workspace">
+            {workspaces.map((ws) => {
+              // Panels stay in tab order (moving them would restart their terminals); a joined
+              // pair is placed left and right by position instead.
+              const side = shown.length > 1 ? shown.indexOf(ws.key) : -1
+              return (
+                <div
+                  key={ws.key}
+                  className="workspace-panel"
+                  hidden={!shown.includes(ws.key)}
+                  role="tabpanel"
+                  style={
+                    side === 0
+                      ? { right: `${(1 - joinSize) * 100}%` }
+                      : side === 1
+                        ? { left: `${joinSize * 100}%` }
+                        : undefined
+                  }
+                >
+                  <WorkspaceView workspace={ws} visible={shown.includes(ws.key)} />
+                </div>
+              )
+            })}
+            {shown.length > 1 && <FolderSplitter left={shown[0]} size={joinSize} />}
+          </main>
+          {bookmarksOpen && <BookmarksPanel />}
+        </div>
         <StatusBar />
         <SettingsDialog />
         <TabSettings />

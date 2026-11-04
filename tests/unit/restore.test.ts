@@ -43,7 +43,8 @@ const saved: UiState = {
       cwd: CWD,
       title: 'Claude 1',
       spec: { kind: 'claude', mode: 'new', sessionId: ID },
-      claudeSessionId: ID
+      claudeSessionId: ID,
+      telegramTopic: 77
     },
     { key: 'old-b', cwd: CWD, title: 'Claude 2', spec: { kind: 'claude', mode: 'continue' } }
   ]
@@ -82,9 +83,28 @@ describe('restoredState / snapshot', () => {
       title: 'Claude 1',
       status: 'starting',
       spec: { kind: 'claude', mode: 'resume', resumeId: ID },
+      claudeSessionId: ID,
+      // The tab writes in its Telegram topic again, under its new key.
+      telegramTopic: 77
+    })
+    expect(snapshot(r).terminals.find((t) => t.title === 'Claude 1')?.telegramTopic).toBe(77)
+    expect(r.terminals[b].spec).toEqual({ kind: 'claude', mode: 'continue' })
+  })
+
+  it('restored lazily, every terminal waits dormant until it is shown', () => {
+    const r = restoredState(saved, { lazy: true })
+    expect(Object.values(r.terminals).map((t) => t.status)).toEqual([
+      'dormant',
+      'dormant',
+      'dormant'
+    ])
+    // A tab that was never opened is saved as it came, so it resumes the same way next time.
+    const s = snapshot(r)
+    expect(s.terminals.find((t) => t.title === 'Claude 1')).toMatchObject({
+      spec: { kind: 'claude', mode: 'resume', resumeId: ID },
       claudeSessionId: ID
     })
-    expect(r.terminals[b].spec).toEqual({ kind: 'claude', mode: 'continue' })
+    expect(s.terminals.every((t) => t.pid === undefined)).toBe(true)
   })
 
   it('round-trips through snapshot', () => {

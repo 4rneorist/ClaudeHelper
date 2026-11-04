@@ -29,8 +29,10 @@ const api: ClaudeHelperApi = {
   claudeStatus: () => ipcRenderer.invoke(IPC.claudeStatus),
   pickFolder: () => ipcRenderer.invoke(IPC.pickFolder),
   pickExecutable: () => ipcRenderer.invoke(IPC.pickExecutable),
+  pickPicture: () => ipcRenderer.invoke(IPC.pickPicture),
+  readPicture: () => ipcRenderer.invoke(IPC.readPicture),
   confirm: (opts) => ipcRenderer.invoke(IPC.confirm, opts),
-  contextMenu: (hasSelection) => ipcRenderer.invoke(IPC.contextMenu, hasSelection),
+  contextMenu: (req) => ipcRenderer.invoke(IPC.contextMenu, req),
   readClipboard: () => ipcRenderer.invoke(IPC.clipboardRead),
   writeClipboard: (text) => ipcRenderer.send(IPC.clipboardWrite, text),
   openExternal: (url) => ipcRenderer.send(IPC.openExternal, url),
@@ -43,7 +45,23 @@ const api: ClaudeHelperApi = {
   notifyAttention: (req) => ipcRenderer.send(IPC.attentionNotify, req),
   setAttentionSummary: (summary) => ipcRenderer.send(IPC.attentionSummary, summary),
   onAttentionFocus: (listener) => subscribe(IPC.attentionFocus, listener),
-  gitInfo: (folder) => ipcRenderer.invoke(IPC.gitInfo, folder)
+  gitInfo: (folder) => ipcRenderer.invoke(IPC.gitInfo, folder),
+  snip: () => ipcRenderer.invoke(IPC.snipCapture),
+  resolveFileLinks: (cwd, paths) => ipcRenderer.invoke(IPC.fileLinksResolve, cwd, paths),
+  openFileLink: (path) => ipcRenderer.send(IPC.fileLinkOpen, path),
+  testTelegram: (token, chatId) => ipcRenderer.invoke(IPC.telegramTest, token, chatId),
+  findTelegramChat: (token) => ipcRenderer.invoke(IPC.telegramFindChat, token),
+  onTelegramIncoming: (listener) => subscribe(IPC.telegramIncoming, listener),
+  onTelegramTopic: (listener) => subscribe(IPC.telegramTopic, listener),
+  renameTelegramTopic: (thread, name) => ipcRenderer.send(IPC.telegramTopicRename, thread, name),
+  checkTelegramTopics: (token) => ipcRenderer.invoke(IPC.telegramTopicsCheck, token),
+  sendTelegram: (msg) => ipcRenderer.invoke(IPC.telegramSend, msg),
+  editTelegram: (messageId, msg) => ipcRenderer.send(IPC.telegramEdit, messageId, msg),
+  answerTelegramButton: (callbackId, text) =>
+    ipcRenderer.send(IPC.telegramAnswerButton, callbackId, text),
+  claudeTurn: (key, since) => ipcRenderer.invoke(IPC.claudeTurn, key, since),
+  loadBookmarks: () => ipcRenderer.invoke(IPC.bookmarksLoad),
+  saveBookmarks: (items) => ipcRenderer.invoke(IPC.bookmarksSave, items)
 }
 
 contextBridge.exposeInMainWorld('api', api)

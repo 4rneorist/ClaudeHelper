@@ -1,0 +1,116 @@
+import type { MenuItemConstructorOptions } from 'electron'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import path from 'path'
+import {
+  BOOKMARK_ID,
+  MAX_BOOKMARK_DEPTH,
+  MAX_BOOKMARK_TITLE,
+  MAX_BOOKMARKS,
+  MAX_PROMPT_LENGTH,
+  titleFromText,
+  type BookmarkNode
+} from '../shared/bookmarks'
+
+/**
+ * Keeps only valid bookmarks from untrusted input (the file or an IPC payload): known types,
+ * unique ids, a title for folders, some text for prompts, and limits on size and depth.
+ */
+export function sanitizeBookmarks(input: unknown): BookmarkNode[] {
+  const seen = new Set<string>()
+  let left = MAX_BOOKMARKS
+  const walk = (items: unknown, depth: number): BookmarkNode[] => {
+    if (!Array.isArray(items) || depth > MAX_BOOKMARK_DEPTH) return []
+    const out: BookmarkNode[] = []
+    for (const item of items) {
+      if (left <= 0) break
+      if (!item || typeof item !== 'object') continue
+      const raw = item as Record<string, unknown>
+      if (typeof raw.id !== 'string' || !BOOKMARK_ID.test(raw.id) || seen.has(raw.id)) continue
+      const title =
+        typeof raw.title === 'string' ? raw.title.trim().slice(0, MAX_BOOKMARK_TITLE) : ''
+      if (raw.type === 'folder' && title) {
+        seen.add(raw.id)
+        left--
+        out.push({
+          type: 'folder',
+          id: raw.id,
+          title,
+          ...(raw.collapsed === true ? { collapsed: true } : {}),
+          children: walk(raw.children, depth + 1)
+        })
+      } else if (raw.type === 'prompt' && typeof raw.text === 'string' && raw.text.trim()) {
+        if (raw.text.length > MAX_PROMPT_LENGTH) continue
+        seen.add(raw.id)
+        left--
+        out.push({
+          type: 'prompt',
+          id: raw.id,
+          title: title || titleFromText(raw.text),
+          text: raw.text
+        })
+      }
+    }
+    return out
+  }
+  return walk(input, 1)
+}
+
+const MENU_LABEL = 60
+
+/** A title for a menu: short, and with & kept literal (it would mark a mnemonic on Windows). */
+function menuLabel(title: string): string {
+  const short = title.length > MENU_LABEL ? `${title.slice(0, MENU_LABEL - 1)}…` : title
+  return short.replace(/&/g, '&&')
+}
+
+/** The bookmarks as menu items: a folder is a submenu, a prompt calls `pick` with its id. */
+export function bookmarkMenuItems(
+  nodes: BookmarkNode[],
+  pick: (id: string) => void
+): MenuItemConstructorOptions[] {
+  if (nodes.length === 0) return [{ label: 'Empty', enabled: false }]
+  return nodes.map((n) =>
+    n.type === 'folder'
+      ? { label: menuLabel(n.title), submenu: bookmarkMenuItems(n.children, pick) }
+      : { label: menuLabel(n.title), click: () => pick(n.id) }
+  )
+}
+
+export class BookmarksStore {
+  private items: BookmarkNode[]
+
+  constructor(private readonly filePath: string) {
+    this.items = this.load()
+  }
+
+  get(): BookmarkNode[] {
+    return this.items
+  }
+
+  /** Replaces all bookmarks; returns what was kept. */
+  save(input: unknown): BookmarkNode[] {
+    this.items = sanitizeBookmarks(input)
+    mkdirSync(path.dirname(this.filePath), { recursive: true })
+    // Write-then-rename so a crash mid-write can't leave a truncated file.
+    const tmp = `${this.filePath}.tmp`
+    writeFileSync(tmp, JSON.stringify({ version: 1, items: this.items }, null, 2), 'utf8')
+    renameSync(tmp, this.filePath)
+    return this.items
+  }
+
+  private load(): BookmarkNode[] {
+    if (!existsSync(this.filePath)) return []
+    try {
+      const raw = JSON.parse(readFileSync(this.filePath, 'utf8')) as { items?: unknown } | null
+      return sanitizeBookmarks(raw?.items)
+    } catch {
+      // Prompts may have been written by hand: keep a copy before the next save replaces it.
+      try {
+        copyFileSync(this.filePath, `${this.filePath}.corrupt-${Date.now()}`)
+      } catch {
+        // Nothing more to save.
+      }
+      return []
+    }
+  }
+}

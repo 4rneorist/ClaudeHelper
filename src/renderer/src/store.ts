@@ -10,8 +10,10 @@ import type {
   TerminalSpec,
   UiState
 } from '../../shared/ipc'
+import type { BookmarkNode } from '../../shared/bookmarks'
 import { findByPath, folderName, samePath } from '../../shared/paths'
 import { MAX_TITLE_LENGTH } from '../../shared/uiState'
+import type { BookmarkDraft } from './bookmarks'
 import {
   contains,
   gridOf,
@@ -29,7 +31,8 @@ import type { ClaudeActivity } from './terminal/claudeActivity'
 // each with a split layout whose leaves are terminals. Terminals are stored flat by key so they
 // can move between layouts without being recreated.
 
-export type TerminalStatus = 'starting' | 'running' | 'exited' | 'error'
+/** dormant: restored, but its process waits until the terminal is first shown. */
+export type TerminalStatus = 'dormant' | 'starting' | 'running' | 'exited' | 'error'
 
 export interface TerminalState {
   key: string
@@ -56,14 +59,27 @@ export interface TerminalState {
   attention?: Attention
   /** When `attention` was set, epoch ms (for reminders). */
   attentionSince?: number
-  /** The last time Claude finished or asked, looked at or not: each new one plays a sound. */
-  lastCall?: { kind: Attention; at: number }
+  /**
+   * The last time Claude finished or asked, looked at or not: each new one plays a sound. `seen`:
+   * you were looking (Telegram still tells you if you have walked away).
+   */
+  lastCall?: { kind: Attention; at: number; seen: boolean }
   /** No sounds, toasts or notifications from it, and it doesn't count as waiting. Saved. */
   muted?: boolean
   /** The Claude conversation this tab has open (kept current by the save round-trip). */
   claudeSessionId?: string
   /** When the current process started, epoch ms. */
   startedAt?: number
+  /** The search bar is open; the number changes with every request to (re)focus it. Not saved. */
+  search?: number
+  /**
+   * Driven from Telegram (a prompt or an answer sent from there): Claude's questions and, when it
+   * finishes, its whole reply go there, in answer to message `messageId`. `since`: when the prompt
+   * was sent (epoch ms; 0 for an answer), so the reply is the one to it. Not saved.
+   */
+  telegramReply?: { messageId: number; since: number }
+  /** Its topic (a thread) in your Telegram chat with the bot, when the bot has topics. Saved. */
+  telegramTopic?: number
   /** Bumped on every (re)start; the terminal starts a new process when it changes. */
   attempt: number
 }
@@ -129,11 +145,27 @@ export interface State {
   /** No sounds, toasts or OS notifications for now; not saved, so it can't be forgotten on. */
   doNotDisturb: boolean
   drag: DragPayload | null
+  /** Bookmarked prompts, in folders. */
+  bookmarks: BookmarkNode[]
+  /**
+   * What the bookmarks panel's editor shows; `seq` changes with every request, so the editor
+   * starts over even for the same bookmark.
+   */
+  bookmarkDraft: (BookmarkDraft & { seq: number }) | null
 
   init(): Promise<void>
   newStartWorkspace(): void
   openInFolder(cwd: string, spec: TerminalSpec, opts?: OpenOptions): void
-  addTerminal(workspace: string, spec: TerminalSpec, title?: string): void
+  /**
+   * A new tab in the folder, shown unless `background` (opened from Telegram); its key, or null
+   * when the folder is gone.
+   */
+  addTerminal(
+    workspace: string,
+    spec: TerminalSpec,
+    title?: string,
+    opts?: { background?: boolean }
+  ): string | null
   splitWithNew(
     workspace: string,
     subTab: string,
@@ -165,6 +197,8 @@ export interface State {
     change: { title?: string; color?: string | null; muted?: boolean }
   ): void
   restartTerminal(key: string): void
+  /** Starts a dormant terminal's process: it is being shown. */
+  wakeTerminal(key: string): void
   /**
    * What Claude is doing now (null: not Claude). Finishing after working, or asking you
    * something, calls for your attention, unless you are `looking` at it (focused, in a focused
@@ -182,6 +216,9 @@ export interface State {
   setSettings(settings: Settings): void
   refreshClaude(): Promise<void>
   setSettingsOpen(open: boolean): void
+  /** Shows the changed bookmarks and saves them. */
+  setBookmarks(bookmarks: BookmarkNode[]): void
+  editBookmark(draft: BookmarkDraft | null): void
   setTabSettings(target: TabSettingsTarget | null): void
   setGitInfo(cwd: string, info: GitInfo | null): void
   /** Adds to the notification list and shows it as a toast. */
@@ -360,18 +397,22 @@ export const useStore = create<State>()((set, get) => {
     toasts: [],
     doNotDisturb: false,
     drag: null,
+    bookmarks: [],
+    bookmarkDraft: null,
 
     init() {
       // Once only: restoring twice (StrictMode runs effects twice) would start every terminal twice.
       initialized ??= (async () => {
-        const [appInfo, settings, claude, shells, saved] = await Promise.all([
+        const [appInfo, settings, claude, shells, saved, bookmarks] = await Promise.all([
           window.api.appInfo(),
           window.api.getSettings(),
           window.api.claudeStatus(),
           window.api.listShells(),
-          window.api.loadUiState()
+          window.api.loadUiState(),
+          window.api.loadBookmarks()
         ])
-        set({ appInfo, settings, claude, shells, ...(saved ? restoredState(saved) : {}) })
+        const restored = saved ? restoredState(saved, { lazy: settings.lazyRestore }) : {}
+        set({ appInfo, settings, claude, shells, bookmarks, ...restored })
       })()
       return initialized
     },
@@ -420,9 +461,9 @@ export const useStore = create<State>()((set, get) => {
       }))
     },
 
-    addTerminal(workspace, spec, title) {
+    addTerminal(workspace, spec, title, opts = {}) {
       const ws = get().workspaces.find((w) => w.key === workspace)
-      if (!ws || ws.kind !== 'folder') return
+      if (!ws || ws.kind !== 'folder') return null
       const terminal = createTerminal(ws, spec, title)
       const sub: SubTab = {
         key: newKey('sub'),
@@ -432,9 +473,10 @@ export const useStore = create<State>()((set, get) => {
       updateWorkspace(workspace, (w) => ({
         ...bumpClaude(w, spec, title),
         subTabs: [...w.subTabs, sub],
-        activeSubTab: sub.key
+        activeSubTab: opts.background ? (w.activeSubTab ?? sub.key) : sub.key
       }))
-      set({ activeWorkspace: workspace })
+      if (!opts.background) set({ activeWorkspace: workspace })
+      return terminal.key
     },
 
     splitWithNew(workspace, subTab, pane, side, spec) {
@@ -681,6 +723,12 @@ export const useStore = create<State>()((set, get) => {
       })
     },
 
+    wakeTerminal(key) {
+      if (get().terminals[key]?.status === 'dormant') {
+        get().patchTerminal(key, { status: 'starting' })
+      }
+    },
+
     reportActivity(key, activity, looking) {
       const t = get().terminals[key]
       if (!t || t.activity === (activity ?? undefined)) return
@@ -700,7 +748,7 @@ export const useStore = create<State>()((set, get) => {
       if (activity !== 'working') patch.workingSince = undefined
       if (call) {
         // The sound plays even for the session you look at; the marks are for elsewhere.
-        patch.lastCall = { kind: call, at: Date.now() }
+        patch.lastCall = { kind: call, at: Date.now(), seen: looking }
         if (!looking) {
           patch.attention = call
           patch.attentionSince = Date.now()
@@ -712,7 +760,9 @@ export const useStore = create<State>()((set, get) => {
     ringBell(key, looking) {
       const t = get().terminals[key]
       if (t?.spec.kind !== 'claude' || t.status !== 'running') return
-      const patch: Partial<TerminalState> = { lastCall: { kind: 'asking', at: Date.now() } }
+      const patch: Partial<TerminalState> = {
+        lastCall: { kind: 'asking', at: Date.now(), seen: looking }
+      }
       if (!looking && !t.attention) {
         patch.attention = 'asking'
         patch.attentionSince = Date.now()
@@ -760,6 +810,17 @@ export const useStore = create<State>()((set, get) => {
 
     setSettingsOpen(open) {
       set({ settingsOpen: open })
+    },
+
+    setBookmarks(bookmarks) {
+      set({ bookmarks })
+      window.api.saveBookmarks(bookmarks).catch((err: unknown) => {
+        console.error('Saving bookmarks failed', err)
+      })
+    },
+
+    editBookmark(draft) {
+      set((s) => ({ bookmarkDraft: draft && { ...draft, seq: (s.bookmarkDraft?.seq ?? 0) + 1 } }))
     },
 
     setTabSettings(target) {
@@ -866,10 +927,22 @@ export function dotStatus(t: TerminalState): DotStatus {
   return t.status === 'running' && t.activity ? t.activity : t.status
 }
 
-/** Aggregate status shown on a folder or sub-tab: what needs you most wins. */
+/**
+ * Aggregate status shown on a folder or sub-tab: what needs you most wins, then any Claude still
+ * working, so idle shows only when nothing inside is busy.
+ */
 export function combinedStatus(states: (TerminalState | undefined)[]): DotStatus | 'none' {
   const present = states.filter((s): s is TerminalState => !!s).map(dotStatus)
-  const order = ['asking', 'error', 'idle', 'working', 'starting', 'running', 'exited'] as const
+  const order = [
+    'asking',
+    'error',
+    'working',
+    'idle',
+    'starting',
+    'running',
+    'exited',
+    'dormant'
+  ] as const
   return order.find((status) => present.includes(status)) ?? 'none'
 }
 
@@ -885,9 +958,13 @@ export function resumeSpec(t: Pick<TerminalState, 'spec' | 'claudeSessionId'>): 
   return { kind: 'claude', mode: 'resume', resumeId: t.claudeSessionId }
 }
 
-/** Rebuilds the store from the state saved at last exit. Every terminal starts afresh. */
+/**
+ * Rebuilds the store from the state saved at last exit. Every terminal starts afresh: right away,
+ * or, `lazy`, once it is first shown.
+ */
 export function restoredState(
-  saved: UiState
+  saved: UiState,
+  { lazy = false }: { lazy?: boolean } = {}
 ): Pick<State, 'workspaces' | 'activeWorkspace' | 'terminals'> {
   const keys = new Map<string, string>()
   const terminals: Record<string, TerminalState> = {}
@@ -902,7 +979,8 @@ export function restoredState(
       title: t.title,
       ...(t.color ? { color: t.color } : {}),
       ...(t.muted ? { muted: true } : {}),
-      status: 'starting',
+      ...(t.telegramTopic ? { telegramTopic: t.telegramTopic } : {}),
+      status: lazy ? 'dormant' : 'starting',
       attempt: 1,
       claudeSessionId: spec.kind === 'claude' ? (spec.resumeId ?? spec.sessionId) : undefined
     }
@@ -974,6 +1052,7 @@ export function snapshot(
         ...(t.muted ? { muted: true } : {}),
         spec: t.spec,
         ...(t.claudeSessionId ? { claudeSessionId: t.claudeSessionId } : {}),
+        ...(t.telegramTopic ? { telegramTopic: t.telegramTopic } : {}),
         ...(t.status === 'running' && t.session && t.startedAt
           ? { pid: t.session.pid, startedAt: t.startedAt }
           : {})

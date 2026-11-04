@@ -567,3 +567,117 @@ test('⚙ on a terminal tab or a pane title bar sets its title and color', async
   await expect(panes.nth(0).locator('.pane-title')).toHaveText('Backend API')
   await expect(panes.nth(0).locator('.pane-header')).toHaveClass(/colored/)
 })
+
+test('Ctrl+F finds text in the scrollback', async () => {
+  // The split from the test before: "Backend API" and "Tests", both Claude.
+  const pane = activeSubTab().locator('.pane').nth(0)
+  await pane.locator('.xterm').click()
+  await page.keyboard.press('Control+F')
+  const bar = pane.locator('.search-bar')
+  await expect(bar).toBeVisible()
+  await bar.getByLabel('Find in terminal').fill('READY')
+  await expect(bar.locator('.search-count')).toHaveText(/^(1 of \d+|\d+ found)$/)
+  await bar.getByLabel('Find in terminal').fill('no-such-text')
+  await expect(bar.locator('.search-count')).toHaveText('No results')
+  await bar.getByLabel('Find in terminal').press('Escape')
+  await expect(bar).toBeHidden()
+})
+
+test('Send to puts the selected text into the prompt of another session', async () => {
+  // The native menu can't be clicked from here: pick "Send Selection To › Tests …" for it.
+  await app.evaluate(({ Menu }) => {
+    const build = Menu.buildFromTemplate.bind(Menu)
+    ;(globalThis as { build?: typeof build }).build = build
+    Menu.buildFromTemplate = ((template: Electron.MenuItemConstructorOptions[]) => {
+      const menu = build(template)
+      menu.popup = ((opts?: Electron.PopupOptions) => {
+        const send = template.find((i) => i.label === 'Send Selection To')
+        const items = (send?.submenu ?? []) as Electron.MenuItemConstructorOptions[]
+        const target = items.find((i) => i.label?.startsWith('Tests ·'))
+        ;(target?.click as (() => void) | undefined)?.()
+        opts?.callback?.()
+      }) as typeof menu.popup
+      return menu
+    }) as typeof Menu.buildFromTemplate
+  })
+  try {
+    const [source, target] = [0, 1].map((i) => activeSubTab().locator('.pane').nth(i))
+    const ready = source.locator('.xterm-rows > div', { hasText: /^READY/ }).first()
+    // xterm's rows take no pointer events (its screen under them does, and selects the word):
+    // double-click there without Playwright's check for what is on top.
+    await ready.dblclick({ position: { x: 12, y: 6 }, force: true })
+    await source.locator('.xterm').click({ button: 'right' })
+    // Pasted into its prompt (the fake claude echoes what it gets), not sent with Enter.
+    await waitForText('GOT:READY', target)
+    await expect(target).toHaveAttribute('data-active', 'true')
+  } finally {
+    await app.evaluate(({ Menu }) => {
+      const build = (globalThis as { build?: typeof Menu.buildFromTemplate }).build
+      if (build) Menu.buildFromTemplate = build
+    })
+  }
+})
+
+test('Ctrl+Shift+S snips the screen into the prompt as an image', async () => {
+  // The system's own snipping overlay can't be driven from here; pretend it captured.
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('snip:capture')
+    ipcMain.handle('snip:capture', () => 'captured')
+  })
+  const pane = activeSubTab().locator('.pane').nth(1)
+  await pane.locator('.xterm').click()
+  await page.keyboard.press('Control+Shift+S')
+  // Claude's paste-image key: Alt+V on Windows, Ctrl+V elsewhere.
+  await waitForText(process.platform === 'win32' ? 'GOT:\\U001BV' : 'GOT:\\U0016', pane)
+})
+
+test('Ctrl+click on a file path in the output opens it, like in VS Code', async () => {
+  mkdirSync(path.join(project, 'notes'), { recursive: true })
+  writeFileSync(path.join(project, 'notes', 'todo.md'), '')
+  await app.evaluate(({ shell }) => {
+    const opened: string[] = []
+    ;(globalThis as { opened?: string[] }).opened = opened
+    shell.openPath = async (p: string) => {
+      opened.push(p)
+      return ''
+    }
+  })
+  const pane = activeSubTab().locator('.pane').nth(1)
+  await pane.locator('.xterm').click()
+  await page.keyboard.press('L')
+  await waitForText('See notes/todo.md:3', pane)
+
+  // Where "notes/todo.md" is drawn: the middle of its first character.
+  const row = pane.locator('.xterm-rows > div', { hasText: 'See notes/todo.md:3' }).last()
+  const at = await row.evaluate((el) => {
+    let offset = (el.textContent ?? '').indexOf('notes/')
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const length = node.textContent?.length ?? 0
+      if (offset < length) {
+        const range = document.createRange()
+        range.setStart(node, offset)
+        range.setEnd(node, offset + 1)
+        const box = range.getBoundingClientRect()
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+      }
+      offset -= length
+    }
+    throw new Error('path not drawn')
+  })
+  await page.mouse.move(at.x, at.y)
+  await expect(pane.locator('.terminal-surface')).toHaveAttribute(
+    'title',
+    /^Open file \((Ctrl|⌘) \+ click\)$/
+  )
+
+  // A plain click is the terminal's own; only Ctrl+click (Cmd+click on macOS) opens it.
+  await page.mouse.click(at.x, at.y)
+  const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await page.keyboard.down(modifier)
+  await page.mouse.click(at.x, at.y)
+  await page.keyboard.up(modifier)
+  await expect
+    .poll(() => app.evaluate(() => (globalThis as { opened?: string[] }).opened))
+    .toEqual([path.join(project, 'notes', 'todo.md')])
+})

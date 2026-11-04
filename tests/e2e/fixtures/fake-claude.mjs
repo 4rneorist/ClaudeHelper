@@ -1,7 +1,7 @@
 // Stand-in for the claude CLI in e2e tests: reports how it was launched, echoes keystrokes
 // (uppercased, so the echo is distinguishable from xterm's own rendering), reports resizes,
 // "works" for 1.5 s on "W" (then asks like a permission prompt on "A"), rings the bell on "B",
-// and exits with code 3 when "q" is pressed.
+// mentions a file on "L", and exits with code 3 when "q" is pressed.
 import { randomUUID } from 'crypto'
 import { mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
@@ -41,6 +41,8 @@ out.write(`TERM=${process.env.TERM} COLORTERM=${process.env.COLORTERM}\r\n`)
 out.write(`SESSION=${session}\r\n`)
 out.write(`SIZE=${out.columns}x${out.rows}\r\n`)
 out.write('READY\r\n')
+// Like Claude Code once its prompt is drawn: the idle title.
+out.write('\x1b]0;✳ Claude Code\x07')
 
 out.on('resize', () => out.write(`SIZE=${out.columns}x${out.rows}\r\n`))
 
@@ -71,6 +73,7 @@ process.stdin.on('data', (data) => {
     out.write('\x1b[2J\x1b[HANSWERED\r\n')
   }
   if (data === 'B') out.write('\x07')
+  if (data === 'L') out.write('See notes/todo.md:3 for details\r\n')
   const shown = JSON.stringify(data).slice(1, -1)
   out.write(`GOT:${shown.toUpperCase()}\r\n`)
 })

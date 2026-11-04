@@ -6,7 +6,7 @@ It tells you when a session is done or needs your answer: with a sound, on its t
 
 **[Download the latest release](https://github.com/4rneorist/ClaudeHelper/releases/latest).** It has installers for Windows (`.exe`), macOS (`.dmg`, Apple Silicon) and Linux (`.AppImage` and `.deb`). You also need the Claude Code CLI, see [Install](#install).
 
-### New since 1.0.1
+### What's new in 1.1.0
 
 - **Claude on your phone.** Your own Telegram bot (optional) says when a session finishes or needs you, headed `✅ IDLE`, `🔔 NEED YOUR ATTENTION` or `⏰ STILL NEEDS YOUR ATTENTION`. With remote control on, you can answer Claude's questions with a tap (or with numbers and your own words where it takes several answers), send prompts, read what a chat shows, and open new chats. Claude's whole reply comes back when it is done, formatted for a phone, tables included. With Threaded Mode on for the bot, each session gets its own topic.
 - **Bookmarked prompts.** Keep the prompts you use again in folders and subfolders, in a column on the right. One click puts a prompt into the session; the right-click menu bookmarks selected text and pastes bookmarks.

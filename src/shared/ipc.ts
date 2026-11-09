@@ -1,6 +1,35 @@
 // Single contract between main, preload and renderer.
 
 import type { BookmarkNode } from './bookmarks'
+import type {
+  ClaudeItemList,
+  ClaudeItemRef,
+  ConfigResult,
+  HookChange,
+  HookDeleteRequest,
+  HookFile,
+  ItemKind,
+  KeybindingsFile,
+  KeybindingsSave,
+  MarketplaceList,
+  MarketplaceRequest,
+  McpList,
+  McpRemoveRequest,
+  McpStatusList,
+  AuthResult,
+  ExtrasList,
+  OrgPolicies,
+  McpSaveRequest,
+  MemoryFile,
+  MemoryRef,
+  SaveMemoryRequest,
+  SettingsFile,
+  SettingsPatch,
+  PluginActionRequest,
+  PluginActionResult,
+  PluginList,
+  SaveItemRequest
+} from './claudeConfig'
 import type { UiState } from './uiState'
 export type { UiState } from './uiState'
 
@@ -70,6 +99,8 @@ export interface Settings {
   telegramRemote: boolean
   /** The bookmarked prompts column is shown on the right. */
   bookmarksOpen: boolean
+  /** Width of the sessions' notes bars, in pixels. */
+  notesWidth: number
   recentFolders: string[]
   /** Folder tab background per folder path, as #rrggbb. */
   folderColors: Record<string, string>
@@ -423,7 +454,35 @@ export const IPC = {
   telegramTopicRename: 'telegram:topicRename',
   claudeTurn: 'claude:turn',
   bookmarksLoad: 'bookmarks:load',
-  bookmarksSave: 'bookmarks:save'
+  bookmarksSave: 'bookmarks:save',
+  claudeItemsList: 'claudeConfig:items',
+  claudeItemRead: 'claudeConfig:readItem',
+  claudeItemSave: 'claudeConfig:saveItem',
+  claudeItemDelete: 'claudeConfig:deleteItem',
+  claudeHooksList: 'claudeConfig:hooks',
+  claudeHookSave: 'claudeConfig:saveHook',
+  claudeHookDelete: 'claudeConfig:deleteHook',
+  claudePluginsList: 'claudeConfig:plugins',
+  claudePluginDetails: 'claudeConfig:pluginDetails',
+  claudePluginAction: 'claudeConfig:pluginAction',
+  claudeMemoryList: 'claudeConfig:memory',
+  claudeMemoryRead: 'claudeConfig:readMemory',
+  claudeMemorySave: 'claudeConfig:saveMemory',
+  claudeMemoryDelete: 'claudeConfig:deleteMemory',
+  claudeMcpList: 'claudeConfig:mcp',
+  claudeMcpSave: 'claudeConfig:saveMcp',
+  claudeMcpRemove: 'claudeConfig:removeMcp',
+  claudeMcpStatus: 'claudeConfig:mcpStatus',
+  claudeExtras: 'claudeConfig:extras',
+  claudeAuthStatus: 'claudeConfig:authStatus',
+  claudeLogout: 'claudeConfig:logout',
+  claudeOrgPolicies: 'claudeConfig:orgPolicies',
+  claudeSettingsRead: 'claudeConfig:settings',
+  claudeSettingsPatch: 'claudeConfig:patchSettings',
+  claudeMarketplaces: 'claudeConfig:marketplaces',
+  claudeMarketplaceAction: 'claudeConfig:marketplaceAction',
+  claudeKeybindingsRead: 'claudeConfig:keybindings',
+  claudeKeybindingsSave: 'claudeConfig:saveKeybindings'
 } as const
 
 /** The API the preload script exposes as `window.api`. */
@@ -522,4 +581,60 @@ export interface ClaudeHelperApi {
   loadBookmarks(): Promise<BookmarkNode[]>
   /** Replaces all bookmarks; returns what was kept (invalid entries are dropped). */
   saveBookmarks(items: BookmarkNode[]): Promise<BookmarkNode[]>
+  /**
+   * Skills or agents: this project's (with a folder) and your own (~/.claude). Null when the
+   * request isn't valid.
+   */
+  listClaudeItems(kind: ItemKind, folder: string | null): Promise<ClaudeItemList | null>
+  /** A skill's SKILL.md or an agent's file; null when it can't be read. */
+  readClaudeItem(ref: ClaudeItemRef): Promise<string | null>
+  /** Creates or changes one; a changed name (`from` is the old one) renames it. */
+  saveClaudeItem(req: SaveItemRequest): Promise<ConfigResult>
+  /** Moves a skill's folder or an agent's file to the trash. */
+  deleteClaudeItem(ref: ClaudeItemRef): Promise<ConfigResult>
+  /** Hooks in your settings, and in the project's shared and personal settings with a folder. */
+  listHooks(folder: string | null): Promise<HookFile[]>
+  saveHook(change: HookChange): Promise<ConfigResult>
+  deleteHook(req: HookDeleteRequest): Promise<ConfigResult>
+  /** Installed plugins (enabled or not for this folder) and what the marketplaces offer. */
+  listPlugins(folder: string | null): Promise<PluginList>
+  /** What a plugin brings, as `claude plugin details` tells it. */
+  pluginDetails(id: string, folder: string | null): Promise<string>
+  /** Installs, uninstalls, enables, disables or updates a plugin with `claude plugin`. */
+  pluginAction(req: PluginActionRequest): Promise<PluginActionResult>
+  /** CLAUDE.md files (there or not), rules and Claude's notes, yours and the folder's. */
+  listMemory(folder: string | null): Promise<MemoryFile[]>
+  readMemory(ref: MemoryRef): Promise<string | null>
+  saveMemory(req: SaveMemoryRequest): Promise<ConfigResult>
+  /** Moves a memory file to the trash. */
+  deleteMemory(ref: MemoryRef): Promise<ConfigResult>
+  /** MCP servers: yours, and the folder's shared and personal ones. */
+  listMcp(folder: string | null): Promise<McpList>
+  /** Adds or changes an MCP server through `claude mcp`. */
+  saveMcp(req: McpSaveRequest): Promise<ConfigResult>
+  removeMcp(req: McpRemoveRequest): Promise<ConfigResult>
+  /**
+   * Every server Claude Code would use here, claude.ai connectors and plugins' included, and
+   * whether it connects (`claude mcp list`, which takes a while).
+   */
+  mcpStatus(folder: string | null): Promise<McpStatusList>
+  /**
+   * The skills claude.ai syncs here, and the skills, commands, agents, output styles and hooks
+   * of the plugins enabled in this folder (to show; they are changed where they come from).
+   */
+  claudeExtras(folder: string | null): Promise<ExtrasList>
+  /** Who Claude Code is logged in as (`claude auth status`). */
+  authStatus(): Promise<AuthResult>
+  /** Logs Claude Code out (`claude auth logout`), and says how it is after. */
+  logout(): Promise<AuthResult>
+  /** What your organization allows and sets for Claude Code. */
+  orgPolicies(): Promise<OrgPolicies>
+  /** Permissions, model, output style, environment and status line in each settings file. */
+  readSettingsFiles(folder: string | null): Promise<SettingsFile[]>
+  patchSettings(patch: SettingsPatch): Promise<ConfigResult>
+  listMarketplaces(folder: string | null): Promise<MarketplaceList>
+  /** Adds, removes or updates a marketplace with `claude plugin marketplace`. */
+  marketplaceAction(req: MarketplaceRequest): Promise<PluginActionResult>
+  readKeybindings(): Promise<KeybindingsFile>
+  saveKeybindings(req: KeybindingsSave): Promise<ConfigResult>
 }

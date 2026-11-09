@@ -14,10 +14,13 @@ import {
   draftFor,
   findNode,
   folderChoices,
+  promptForHotkey,
   removeNode,
   updateNode,
   type BookmarkDraft
 } from '../bookmarks'
+import { hotkeyNotes } from '../hotkeyNotes'
+import { hotkeyOf, hotkeyProblem, partialHotkey, showHotkey } from '../../../shared/hotkeys'
 import { activeTerminalKey, useStore } from '../store'
 
 /** How much of a prompt its tooltip shows. */
@@ -233,8 +236,10 @@ function PromptItem({
   depth: number
 }): React.JSX.Element {
   const canInsert = useStore((s) => activeTerminalKey(s) !== null)
+  const platform = useStore((s) => s.appInfo?.platform ?? '')
   const preview =
     prompt.text.length > PREVIEW_LENGTH ? `${prompt.text.slice(0, PREVIEW_LENGTH)}…` : prompt.text
+  const key = prompt.hotkey ? showHotkey(prompt.hotkey, platform) : null
 
   return (
     <li>
@@ -243,11 +248,14 @@ function PromptItem({
           className="bookmark-main"
           disabled={!canInsert}
           title={
-            canInsert ? `${preview}\n\nClick to put it into the prompt` : 'Open a session first'
+            canInsert
+              ? `${preview}\n\nClick${key ? ` or press ${key}` : ''} to put it into the prompt`
+              : 'Open a session first'
           }
           onClick={() => insertIntoActiveTerminal(prompt.text)}
         >
           <span className="bookmark-title">{prompt.title}</span>
+          {key && <kbd className="bookmark-key">{key}</kbd>}
         </button>
         <span className="bookmark-actions">
           <EditButtons node={prompt} />
@@ -301,19 +309,22 @@ function EditButtons({ node }: { node: BookmarkNode }): React.JSX.Element {
 function BookmarkEditor({ draft }: { draft: BookmarkDraft }): React.JSX.Element {
   const bookmarks = useStore((s) => s.bookmarks)
   const editBookmark = useStore((s) => s.editBookmark)
+  const platform = useStore((s) => s.appInfo?.platform ?? '')
   const [title, setTitle] = useState(draft.title)
   const [text, setText] = useState(draft.type === 'prompt' ? draft.text : '')
+  const [hotkey, setHotkey] = useState(draft.type === 'prompt' ? draft.hotkey : undefined)
   const [parent, setParent] = useState(draft.parent)
   const editing = draft.id !== undefined ? findNode(bookmarks, draft.id) : null
   const choices = folderChoices(bookmarks, editing ?? undefined)
   const isPrompt = draft.type === 'prompt'
-  const valid = isPrompt ? text.trim() !== '' : title.trim() !== ''
+  const keyProblem = hotkey ? hotkeyProblem(hotkey, platform) : null
+  const valid = (isPrompt ? text.trim() !== '' : title.trim() !== '') && !keyProblem
   const heading = `${editing ? 'Edit' : 'New'} ${isPrompt ? 'prompt' : 'folder'}`
 
   const save = (): void => {
     if (!valid) return
     const next: BookmarkDraft = isPrompt
-      ? { type: 'prompt', id: draft.id, parent, title, text }
+      ? { type: 'prompt', id: draft.id, parent, title, text, ...(hotkey ? { hotkey } : {}) }
       : { type: 'folder', id: draft.id, parent, title }
     const { bookmarks, setBookmarks } = useStore.getState()
     setBookmarks(applyDraft(bookmarks, next))
@@ -361,6 +372,18 @@ function BookmarkEditor({ draft }: { draft: BookmarkDraft }): React.JSX.Element 
           />
         </label>
       )}
+      {isPrompt && (
+        <HotkeyField
+          value={hotkey}
+          onChange={setHotkey}
+          platform={platform}
+          problem={keyProblem}
+          takenBy={(() => {
+            const other = hotkey ? promptForHotkey(bookmarks, hotkey) : null
+            return other && other.id !== draft.id ? other.title : null
+          })()}
+        />
+      )}
       <label className="field">
         <span>Folder</span>
         <select
@@ -383,6 +406,87 @@ function BookmarkEditor({ draft }: { draft: BookmarkDraft }): React.JSX.Element 
         </button>
       </div>
     </form>
+  )
+}
+
+/**
+ * Records a hotkey: focus it and press the keys. Backspace or Delete clears it; Tab moves on;
+ * Escape stops recording.
+ */
+function HotkeyField({
+  value,
+  onChange,
+  platform,
+  problem,
+  takenBy
+}: {
+  value: string | undefined
+  onChange(hotkey: string | undefined): void
+  platform: string
+  problem: string | null
+  takenBy: string | null
+}): React.JSX.Element {
+  // The modifiers held while recording ("Ctrl+Shift+…").
+  const [held, setHeld] = useState('')
+  const notes = value && !problem ? hotkeyNotes(value, platform) : []
+  const record = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    const mods = e.ctrlKey || e.altKey || e.metaKey || e.shiftKey
+    if (e.key === 'Tab' && !mods) return
+    e.preventDefault()
+    e.stopPropagation() // not the editor's own Escape and Ctrl+Enter
+    if (!mods && (e.key === 'Backspace' || e.key === 'Delete')) {
+      setHeld('')
+      onChange(undefined)
+      return
+    }
+    if (!mods && e.key === 'Escape') {
+      setHeld('')
+      e.currentTarget.blur()
+      return
+    }
+    const hotkey = hotkeyOf(e.nativeEvent)
+    if (!hotkey) {
+      setHeld(partialHotkey(e))
+      return
+    }
+    setHeld('')
+    onChange(hotkey)
+  }
+  return (
+    <label className="field">
+      <span>Hotkey</span>
+      <div className="row hotkey-row">
+        <input
+          type="text"
+          className="hotkey-input"
+          readOnly
+          value={held || (value ? showHotkey(value, platform) : '')}
+          placeholder="Click, then press the keys"
+          onKeyDown={record}
+          onKeyUp={(e) => {
+            if (!e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) setHeld('')
+          }}
+          onBlur={() => setHeld('')}
+          spellCheck={false}
+        />
+        {value && (
+          <button type="button" className="secondary" onClick={() => onChange(undefined)}>
+            Clear
+          </button>
+        )}
+      </div>
+      {problem ? (
+        <small className="field-error">{problem}</small>
+      ) : value ? (
+        <small className="muted">
+          Pastes it into the terminal, unsent.
+          {takenBy && ` It is now on “${takenBy}”: saving moves it here.`}
+          {notes.map((n) => ` ${n}`)}
+        </small>
+      ) : (
+        <small className="muted">Optional: a key like Ctrl+Shift+C that pastes it.</small>
+      )}
+    </label>
   )
 }
 

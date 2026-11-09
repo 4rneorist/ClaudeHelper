@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { matchRunningSessions, readRunningSessions } from '../../src/main/claudeSessions'
 import { registrySignature } from '../../src/main/registryWatcher'
 import { sanitizeUiState, UiStateStore } from '../../src/main/uiState'
+import { MAX_NOTES_LENGTH } from '../../src/shared/uiState'
 
 const ROOT = process.platform === 'win32' ? 'C:\\work' : '/work'
 const A = path.join(ROOT, 'a')
@@ -106,6 +107,25 @@ describe('sanitizeUiState', () => {
     )!
     expect(s.terminals[0].muted).toBe(true)
     expect(s.terminals[1]).not.toHaveProperty('muted')
+  })
+
+  it("keeps a session's notes when they say something, cut to the longest kept", () => {
+    const notes = (value: unknown): unknown =>
+      sanitizeUiState(state({ terminals: [claude('t1', A, { notes: value })] }))!.terminals[0].notes
+    expect(notes('  check the\nmigration  ')).toBe('  check the\nmigration  ')
+    expect(notes('   \n ')).toBeUndefined()
+    expect(notes(42)).toBeUndefined()
+    expect(notes('x'.repeat(MAX_NOTES_LENGTH + 10))).toHaveLength(MAX_NOTES_LENGTH)
+  })
+
+  it('keeps a notes bar open, and only true counts', () => {
+    const s = sanitizeUiState(
+      state({
+        terminals: [claude('t1', A, { notesOpen: true }), claude('t2', A, { notesOpen: 'yes' })]
+      })
+    )!
+    expect(s.terminals[0].notesOpen).toBe(true)
+    expect(s.terminals[1]).not.toHaveProperty('notesOpen')
   })
 
   it("keeps a tab's Telegram topic only as a positive whole number", () => {
@@ -216,11 +236,22 @@ describe('readRunningSessions / UiStateStore', () => {
     const store = new UiStateStore(file, () => path.join(dir, 'claude'), 'linux')
     registry(4242, ID2) // claude switched conversation (e.g. after /clear)
     const ids = await store.save(
-      state({ terminals: [claude('t1', A, { pid: 4242, startedAt: 900 }), claude('t2')] })
+      state({
+        terminals: [
+          claude('t1', A, { pid: 4242, startedAt: 900, notes: 'ask about X', notesOpen: true }),
+          claude('t2')
+        ]
+      })
     )
     expect(ids).toEqual({ t1: ID2 })
     const loaded = store.load()!
-    expect(loaded.terminals[0]).toMatchObject({ key: 't1', claudeSessionId: ID2 })
+    expect(loaded.terminals[0]).toMatchObject({
+      key: 't1',
+      claudeSessionId: ID2,
+      notes: 'ask about X',
+      notesOpen: true
+    })
+    expect(loaded.terminals[1]).not.toHaveProperty('notes')
     expect(loaded.terminals[0]).not.toHaveProperty('pid')
     expect(JSON.parse(readFileSync(file, 'utf8')).terminals[0]).not.toHaveProperty('startedAt')
   })

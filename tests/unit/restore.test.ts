@@ -164,6 +164,26 @@ describe('restoredState / snapshot', () => {
     expect(snapshot(r).terminals.find((t) => t.title === 'Claude 2')).not.toHaveProperty('color')
   })
 
+  it("keeps a session's notes and whether its notes bar is open", () => {
+    const noted: UiState = {
+      ...saved,
+      terminals: saved.terminals.map((t) =>
+        t.key === 'old-a' ? { ...t, notes: 'ask about the migration', notesOpen: true } : t
+      )
+    }
+    const r = restoredState(noted)
+    const a = leaves(r.workspaces[0].subTabs[1].layout)[0]
+    expect(r.terminals[a]).toMatchObject({ notes: 'ask about the migration', notesOpen: true })
+    const out = snapshot(r).terminals
+    expect(out.find((t) => t.title === 'Claude 1')).toMatchObject({
+      notes: 'ask about the migration',
+      notesOpen: true
+    })
+    const plain = out.find((t) => t.title === 'Claude 2')
+    expect(plain).not.toHaveProperty('notes')
+    expect(plain).not.toHaveProperty('notesOpen')
+  })
+
   it('keeps two folders joined side by side, with the divider where it was', () => {
     const other = process.platform === 'win32' ? 'C:\\work\\api' : '/work/api'
     const pair: UiState = {

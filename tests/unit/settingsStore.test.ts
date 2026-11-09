@@ -10,6 +10,7 @@ import {
   type SecretCipher
 } from '../../src/main/settingsStore'
 import { TELEGRAM_ALWAYS } from '../../src/shared/ipc'
+import { DEFAULT_NOTES_WIDTH, MAX_NOTES_WIDTH, MIN_NOTES_WIDTH } from '../../src/shared/uiState'
 
 describe('SettingsStore', () => {
   let dir: string
@@ -39,6 +40,16 @@ describe('SettingsStore', () => {
     expect(s.theme).toBe(DEFAULT_SETTINGS.theme)
     expect(s.experimentalConptyDll).toBe(DEFAULT_SETTINGS.experimentalConptyDll)
     expect(s).not.toHaveProperty('extra')
+  })
+
+  it('keeps the notes bar width a whole number of pixels, in range', () => {
+    const store = new SettingsStore(file)
+    expect(store.get().notesWidth).toBe(DEFAULT_NOTES_WIDTH)
+    expect(store.update({ notesWidth: 333.6 }).notesWidth).toBe(334)
+    expect(store.update({ notesWidth: 5 }).notesWidth).toBe(MIN_NOTES_WIDTH)
+    expect(store.update({ notesWidth: 99_999 }).notesWidth).toBe(MAX_NOTES_WIDTH)
+    expect(store.update({ notesWidth: 'wide' }).notesWidth).toBe(MAX_NOTES_WIDTH)
+    expect(new SettingsStore(file).get().notesWidth).toBe(MAX_NOTES_WIDTH)
   })
 
   it('resumes restored tabs lazily unless switched off', () => {

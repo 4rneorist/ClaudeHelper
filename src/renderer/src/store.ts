@@ -11,8 +11,9 @@ import type {
   UiState
 } from '../../shared/ipc'
 import type { BookmarkNode } from '../../shared/bookmarks'
+import { CLAUDE_LOGIN_SHELL } from '../../shared/claudeConfig'
 import { findByPath, folderName, samePath } from '../../shared/paths'
-import { MAX_TITLE_LENGTH } from '../../shared/uiState'
+import { MAX_NOTES_LENGTH, MAX_TITLE_LENGTH } from '../../shared/uiState'
 import type { BookmarkDraft } from './bookmarks'
 import {
   contains,
@@ -80,6 +81,10 @@ export interface TerminalState {
   telegramReply?: { messageId: number; since: number }
   /** Its topic (a thread) in your Telegram chat with the bot, when the bot has topics. Saved. */
   telegramTopic?: number
+  /** Your own notes on the session, in the bar on its right; unset when empty. Saved. */
+  notes?: string
+  /** That notes bar is open. Saved. */
+  notesOpen?: boolean
   /** Bumped on every (re)start; the terminal starts a new process when it changes. */
   attempt: number
 }
@@ -135,6 +140,8 @@ export interface State {
   activeWorkspace: string
   terminals: Record<string, TerminalState>
   settingsOpen: boolean
+  /** The "Claude Code" window: skills, agents, hooks and plugins. */
+  claudeConfigOpen: boolean
   tabSettings: TabSettingsTarget | null
   /** Git branch and changes per open folder (cwd); null for folders outside a repository. */
   gitInfo: Record<string, GitInfo | null>
@@ -196,6 +203,10 @@ export interface State {
     key: string,
     change: { title?: string; color?: string | null; muted?: boolean }
   ): void
+  /** Sets a session's notes; empty text clears them. */
+  setNotes(key: string, text: string): void
+  /** Opens or closes a session's notes bar; flips it without `open`. */
+  toggleNotes(key: string, open?: boolean): void
   restartTerminal(key: string): void
   /** Starts a dormant terminal's process: it is being shown. */
   wakeTerminal(key: string): void
@@ -216,6 +227,7 @@ export interface State {
   setSettings(settings: Settings): void
   refreshClaude(): Promise<void>
   setSettingsOpen(open: boolean): void
+  setClaudeConfigOpen(open: boolean): void
   /** Shows the changed bookmarks and saves them. */
   setBookmarks(bookmarks: BookmarkNode[]): void
   editBookmark(draft: BookmarkDraft | null): void
@@ -391,6 +403,7 @@ export const useStore = create<State>()((set, get) => {
     activeWorkspace: first.key,
     terminals: {},
     settingsOpen: false,
+    claudeConfigOpen: false,
     tabSettings: null,
     gitInfo: {},
     notifications: [],
@@ -704,6 +717,17 @@ export const useStore = create<State>()((set, get) => {
       get().patchTerminal(key, patch)
     },
 
+    setNotes(key, text) {
+      get().patchTerminal(key, { notes: text.slice(0, MAX_NOTES_LENGTH) || undefined })
+    },
+
+    toggleNotes(key, open) {
+      const t = get().terminals[key]
+      if (!t) return
+      const next = open ?? !t.notesOpen
+      if (next !== !!t.notesOpen) get().patchTerminal(key, { notesOpen: next || undefined })
+    },
+
     restartTerminal(key) {
       const t = get().terminals[key]
       if (!t) return
@@ -810,6 +834,10 @@ export const useStore = create<State>()((set, get) => {
 
     setSettingsOpen(open) {
       set({ settingsOpen: open })
+    },
+
+    setClaudeConfigOpen(open) {
+      set({ claudeConfigOpen: open })
     },
 
     setBookmarks(bookmarks) {
@@ -980,6 +1008,8 @@ export function restoredState(
       ...(t.color ? { color: t.color } : {}),
       ...(t.muted ? { muted: true } : {}),
       ...(t.telegramTopic ? { telegramTopic: t.telegramTopic } : {}),
+      ...(t.notes ? { notes: t.notes } : {}),
+      ...(t.notesOpen ? { notesOpen: true } : {}),
       status: lazy ? 'dormant' : 'starting',
       attempt: 1,
       claudeSessionId: spec.kind === 'claude' ? (spec.resumeId ?? spec.sessionId) : undefined
@@ -1019,6 +1049,11 @@ export function restoredState(
   }
 }
 
+/** A tab running `claude auth login`. */
+export function isLoginTab(t: Pick<TerminalState, 'spec'>): boolean {
+  return t.spec.kind === 'shell' && t.spec.shellId === CLAUDE_LOGIN_SHELL
+}
+
 /** What gets persisted: folders, tabs, splits (with sizes) and terminals; no transient state. */
 export function snapshot(
   state: Pick<State, 'workspaces' | 'activeWorkspace' | 'terminals'>
@@ -1043,7 +1078,8 @@ export function snapshot(
       }
     }),
     terminals: Object.values(state.terminals)
-      .filter((t) => used.has(t.key))
+      // A login tab is done once closed: it isn't started again after a restart.
+      .filter((t) => used.has(t.key) && !isLoginTab(t))
       .map((t) => ({
         key: t.key,
         cwd: t.cwd,
@@ -1053,6 +1089,8 @@ export function snapshot(
         spec: t.spec,
         ...(t.claudeSessionId ? { claudeSessionId: t.claudeSessionId } : {}),
         ...(t.telegramTopic ? { telegramTopic: t.telegramTopic } : {}),
+        ...(t.notes ? { notes: t.notes } : {}),
+        ...(t.notesOpen ? { notesOpen: true } : {}),
         ...(t.status === 'running' && t.session && t.startedAt
           ? { pid: t.session.pid, startedAt: t.startedAt }
           : {})

@@ -6,7 +6,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import type { FileLink, SendTarget, TerminalSpec } from '../../../shared/ipc'
-import { findNode } from '../bookmarks'
+import { hotkeyOf } from '../../../shared/hotkeys'
+import { findNode, promptForHotkey } from '../bookmarks'
 import { activeTerminalKey, useStore } from '../store'
 import {
   activityFromTitle,
@@ -759,6 +760,7 @@ export class TerminalSession {
   }
 
   private handleKey(ev: KeyboardEvent): boolean {
+    if (this.bookmarkHotkey(ev)) return false
     const action = classifyKey(ev, this.opts.platform, this.term.hasSelection())
     if (action.type === 'pass') return true
     // Prompts are Claude's; a shell keeps Ctrl+arrows for itself.
@@ -788,6 +790,34 @@ export class TerminalSession {
         this.opts.onShortcut(action)
     }
     return false
+  }
+
+  /**
+   * A bookmarked prompt's hotkey puts the prompt in, unsent (its keypress and keyup are blocked
+   * too). With text selected, a hotkey on the copy key still copies.
+   */
+  private bookmarkHotkey(ev: KeyboardEvent): boolean {
+    if (!ev.ctrlKey && !ev.altKey && !ev.metaKey && !/^F\d+$/.test(ev.code)) return false
+    const hotkey = hotkeyOf(ev)
+    const prompt = hotkey ? promptForHotkey(useStore.getState().bookmarks, hotkey) : null
+    if (!prompt) return false
+    if (this.term.hasSelection()) {
+      const press = {
+        type: 'keydown',
+        key: ev.key,
+        code: ev.code,
+        ctrlKey: ev.ctrlKey,
+        shiftKey: ev.shiftKey,
+        altKey: ev.altKey,
+        metaKey: ev.metaKey
+      }
+      if (classifyKey(press, this.opts.platform, true).type === 'copy') return false
+    }
+    if (ev.type === 'keydown') {
+      ev.preventDefault()
+      this.deliver(prompt.text)
+    }
+    return true
   }
 
   private copySelection(): void {

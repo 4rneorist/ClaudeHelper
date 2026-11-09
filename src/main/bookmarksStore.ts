@@ -10,6 +10,7 @@ import {
   titleFromText,
   type BookmarkNode
 } from '../shared/bookmarks'
+import { isHotkey } from '../shared/hotkeys'
 
 /**
  * Keeps only valid bookmarks from untrusted input (the file or an IPC payload): known types,
@@ -17,6 +18,8 @@ import {
  */
 export function sanitizeBookmarks(input: unknown): BookmarkNode[] {
   const seen = new Set<string>()
+  // A hotkey pastes one prompt: the first that has it keeps it.
+  const hotkeys = new Set<string>()
   let left = MAX_BOOKMARKS
   const walk = (items: unknown, depth: number): BookmarkNode[] => {
     if (!Array.isArray(items) || depth > MAX_BOOKMARK_DEPTH) return []
@@ -42,11 +45,14 @@ export function sanitizeBookmarks(input: unknown): BookmarkNode[] {
         if (raw.text.length > MAX_PROMPT_LENGTH) continue
         seen.add(raw.id)
         left--
+        const hotkey = isHotkey(raw.hotkey) && !hotkeys.has(raw.hotkey) ? raw.hotkey : null
+        if (hotkey) hotkeys.add(hotkey)
         out.push({
           type: 'prompt',
           id: raw.id,
           title: title || titleFromText(raw.text),
-          text: raw.text
+          text: raw.text,
+          ...(hotkey ? { hotkey } : {})
         })
       }
     }
@@ -63,17 +69,44 @@ function menuLabel(title: string): string {
   return short.replace(/&/g, '&&')
 }
 
+/** Keys Electron can show in a menu, by its names for them. */
+const ACCELERATOR_KEY =
+  /^([A-Z0-9]|F\d{1,2}|num\d|Space|Tab|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Up|Down|Left|Right|Return|Escape|[-=[\]\\;',./`])$/
+
+/**
+ * A hotkey as a menu shows it (only shown: the terminal handles the keys). Null for a key
+ * Electron has no name for, so a menu never gets one it can't read.
+ */
+export function menuAccelerator(
+  hotkey: string | undefined,
+  platform: NodeJS.Platform = process.platform
+): string | null {
+  if (!hotkey || !isHotkey(hotkey)) return null
+  const parts = hotkey.split('+')
+  const key = parts.pop()!
+  const mods = parts.map((m) => (m === 'Cmd' && platform !== 'darwin' ? 'Super' : m))
+  const name =
+    key === 'Enter' ? 'Return' : key === 'Esc' ? 'Escape' : key.replace(/^Num(\d)$/, 'num$1')
+  return ACCELERATOR_KEY.test(name) ? [...mods, name].join('+') : null
+}
+
 /** The bookmarks as menu items: a folder is a submenu, a prompt calls `pick` with its id. */
 export function bookmarkMenuItems(
   nodes: BookmarkNode[],
   pick: (id: string) => void
 ): MenuItemConstructorOptions[] {
   if (nodes.length === 0) return [{ label: 'Empty', enabled: false }]
-  return nodes.map((n) =>
-    n.type === 'folder'
-      ? { label: menuLabel(n.title), submenu: bookmarkMenuItems(n.children, pick) }
-      : { label: menuLabel(n.title), click: () => pick(n.id) }
-  )
+  return nodes.map((n) => {
+    if (n.type === 'folder') {
+      return { label: menuLabel(n.title), submenu: bookmarkMenuItems(n.children, pick) }
+    }
+    const accelerator = menuAccelerator(n.hotkey)
+    return {
+      label: menuLabel(n.title),
+      click: () => pick(n.id),
+      ...(accelerator ? { accelerator, registerAccelerator: false } : {})
+    }
+  })
 }
 
 export class BookmarksStore {

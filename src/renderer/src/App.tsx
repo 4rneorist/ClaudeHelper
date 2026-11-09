@@ -1,10 +1,13 @@
 import { useEffect } from 'react'
-import { focusActiveTerminal, runShortcut } from './actions'
+import { hotkeyOf } from '../../shared/hotkeys'
+import { focusActiveTerminal, insertIntoActiveTerminal, runShortcut } from './actions'
+import { promptForHotkey } from './bookmarks'
 import { startAttention } from './attention'
 import { startGitPolling } from './gitPolling'
 import { startPersistence } from './persist'
 import { startTelegramCommands } from './telegramCommands'
 import { BookmarksPanel } from './components/BookmarksPanel'
+import { ClaudeConfigDialog } from './components/claudeConfig/ClaudeConfigDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import { StatusBar } from './components/StatusBar'
 import { TabBar } from './components/TabBar'
@@ -58,7 +61,17 @@ function App(): React.JSX.Element {
   // App shortcuts when focus is outside a terminal (start screen, tab bars). Terminals handle their own.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
-      if ((e.target as Element | null)?.closest?.('.xterm')) return
+      const target = e.target as Element | null
+      if (target?.closest?.('.xterm')) return
+      // A bookmark's hotkey puts its prompt into the active terminal; not while typing elsewhere.
+      const typing = target?.closest?.('input, textarea, select, [contenteditable], dialog')
+      const hotkey = typing ? null : hotkeyOf(e)
+      const prompt = hotkey ? promptForHotkey(useStore.getState().bookmarks, hotkey) : null
+      if (prompt) {
+        e.preventDefault()
+        insertIntoActiveTerminal(prompt.text)
+        return
+      }
       const action = classifyKey(e, platform, false)
       if (!APP_SHORTCUTS.has(action.type)) return
       e.preventDefault()
@@ -135,6 +148,7 @@ function App(): React.JSX.Element {
         </div>
         <StatusBar />
         <SettingsDialog />
+        <ClaudeConfigDialog />
         <TabSettings />
         <Toasts />
       </div>

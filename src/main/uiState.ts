@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import path from 'path'
 import { HEX_COLOR } from '../shared/ipc'
 import {
+  MAX_NOTES_LENGTH,
   MAX_TITLE_LENGTH,
   MIN_JOIN_SIZE,
   type LayoutNode,
@@ -89,6 +90,10 @@ export function sanitizeUiState(input: unknown, keepRuntime = false): UiState | 
     if (typeof topic === 'number' && Number.isInteger(topic) && topic > 0) {
       saved.telegramTopic = topic
     }
+    if (typeof r.notes === 'string' && r.notes.trim()) {
+      saved.notes = r.notes.slice(0, MAX_NOTES_LENGTH)
+    }
+    if (r.notesOpen === true) saved.notesOpen = true
     if (keepRuntime && typeof r.pid === 'number' && typeof r.startedAt === 'number') {
       saved.pid = r.pid
       saved.startedAt = r.startedAt
@@ -255,6 +260,8 @@ export class UiStateStore {
         const id = ids[t.key] ?? t.claudeSessionId
         if (id) persistedTerminal.claudeSessionId = id
         if (t.telegramTopic) persistedTerminal.telegramTopic = t.telegramTopic
+        if (t.notes) persistedTerminal.notes = t.notes
+        if (t.notesOpen) persistedTerminal.notesOpen = true
         return persistedTerminal
       })
     }

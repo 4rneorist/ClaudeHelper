@@ -12,7 +12,12 @@ import {
   type PictureFit,
   type Settings
 } from '../shared/ipc'
-import { MAX_TITLE_LENGTH } from '../shared/uiState'
+import {
+  DEFAULT_NOTES_WIDTH,
+  MAX_NOTES_WIDTH,
+  MAX_TITLE_LENGTH,
+  MIN_NOTES_WIDTH
+} from '../shared/uiState'
 
 export const MAX_RECENT = 15
 /** Below this the picture would hardly show. */
@@ -61,6 +66,7 @@ export const DEFAULT_SETTINGS: Settings = {
   telegramAwayMinutes: 5,
   telegramRemote: false,
   bookmarksOpen: false,
+  notesWidth: DEFAULT_NOTES_WIDTH,
   recentFolders: [],
   folderColors: {},
   folderTitles: {}
@@ -159,6 +165,12 @@ export function sanitizeSettings(input: unknown, base: Settings = DEFAULT_SETTIN
   }
   if (typeof raw.telegramRemote === 'boolean') out.telegramRemote = raw.telegramRemote
   if (typeof raw.bookmarksOpen === 'boolean') out.bookmarksOpen = raw.bookmarksOpen
+  if (typeof raw.notesWidth === 'number' && Number.isFinite(raw.notesWidth)) {
+    out.notesWidth = Math.min(
+      MAX_NOTES_WIDTH,
+      Math.max(MIN_NOTES_WIDTH, Math.round(raw.notesWidth))
+    )
+  }
   if (Array.isArray(raw.mutedFolders)) {
     out.mutedFolders = raw.mutedFolders.filter(
       (f): f is string => typeof f === 'string' && f !== ''

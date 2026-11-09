@@ -6,6 +6,14 @@ import type { TerminalSpec } from './ipc'
 /** Longest terminal name kept, whether typed in or read back. */
 export const MAX_TITLE_LENGTH = 80
 
+/** Longest session notes kept, whether typed in or read back. */
+export const MAX_NOTES_LENGTH = 100_000
+
+/** Widths of the session notes bar, in pixels (one width, shared by every session's bar). */
+export const DEFAULT_NOTES_WIDTH = 260
+export const MIN_NOTES_WIDTH = 160
+export const MAX_NOTES_WIDTH = 1200
+
 /** Neither of two joined folders gets less than this share of the window's width. */
 export const MIN_JOIN_SIZE = 0.15
 
@@ -29,6 +37,10 @@ export interface SavedTerminal {
   claudeSessionId?: string
   /** Its topic in your Telegram chat with the bot (a thread), when it has one. */
   telegramTopic?: number
+  /** Your own notes on the session, shown in the bar on its right. */
+  notes?: string
+  /** That notes bar is open. */
+  notesOpen?: boolean
   /** Runtime only: lets main ask Claude Code which conversation the process has open now. */
   pid?: number
   startedAt?: number

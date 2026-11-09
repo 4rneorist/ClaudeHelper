@@ -14,6 +14,7 @@ import { findFolderColor, tabColors } from '../tabColors'
 import { ThemeContext } from '../themeContext'
 import { JiraChip } from './JiraChip'
 import { BookmarkIcon } from './BookmarksPanel'
+import { PuzzleIcon } from './claudeConfig/shared'
 import { BellIcon, NotificationBell } from './Notifications'
 import { isFolderMuted } from '../waiting'
 
@@ -41,6 +42,7 @@ export function TabBar(): React.JSX.Element {
   const activeWorkspace = useStore((s) => s.activeWorkspace)
   const newStartWorkspace = useStore((s) => s.newStartWorkspace)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+  const setClaudeConfigOpen = useStore((s) => s.setClaudeConfigOpen)
   const bookmarksOpen = useStore((s) => s.settings?.bookmarksOpen ?? false)
   const folderColors = useStore((s) => s.settings?.folderColors)
   const platform = useStore((s) => s.appInfo?.platform ?? '')
@@ -84,6 +86,14 @@ export function TabBar(): React.JSX.Element {
         onClick={() => toggleBookmarks()}
       >
         <BookmarkIcon />
+      </button>
+      <button
+        className="icon-button"
+        aria-label="Claude Code: skills, agents, hooks and plugins"
+        title="Skills, agents, hooks and plugins"
+        onClick={() => setClaudeConfigOpen(true)}
+      >
+        <PuzzleIcon />
       </button>
       <button
         className="icon-button"

@@ -6,6 +6,12 @@ It tells you when a session is done or needs your answer: with a sound, on its t
 
 **[Download the latest release](https://github.com/4rneorist/ClaudeHelper/releases/latest).** It has installers for Windows (`.exe`), macOS (`.dmg`, Apple Silicon) and Linux (`.AppImage` and `.deb`). You also need the Claude Code CLI, see [Install](#install).
 
+### What's new in 1.2.0
+
+- **Notes for each session.** A notepad button opens a column on the right of a session for your own notes. Each session has its own, they save as you type, and they come back after a restart. Drag the column's edge to make it wider.
+- **Claude Code's setup in one window.** The puzzle button shows your skills, commands, agents, output styles, memory, MCP servers, plugins, marketplaces, hooks, permissions, settings and keybindings, your own or a folder's, and lets you change them.
+- **Hotkeys for bookmarked prompts.** Give a prompt a key like Ctrl+Shift+C and pressing it puts the prompt into the session, unsent.
+
 ### What's new in 1.1.0
 
 - **Claude on your phone.** Your own Telegram bot (optional) says when a session finishes or needs you, headed `✅ IDLE`, `🔔 NEED YOUR ATTENTION` or `⏰ STILL NEEDS YOUR ATTENTION`. With remote control on, you can answer Claude's questions with a tap (or with numbers and your own words where it takes several answers), send prompts, read what a chat shows, and open new chats. Claude's whole reply comes back when it is done, formatted for a phone, tables included. With Threaded Mode on for the bot, each session gets its own topic.
@@ -154,8 +160,15 @@ Then run `claude` once in a terminal to log in. The app finds `claude` by itself
 - **Bookmarked prompts:** the bookmark button next to ⚙ shows or hides a column on the right with your saved prompts. It stays open or closed across restarts.
   - **+** adds a prompt, and the folder button adds a folder, at the top level. Hold the mouse over a folder to add a prompt or a subfolder in it, or to edit (✎) or delete it; prompts have ✎ and delete too. The editor sets the title, the text and the folder, so it also moves things between folders. Without a title, a prompt is named after its first line. Folders nest up to 8 levels deep.
   - Click a prompt to put it into the active session's prompt, unsent, so you can add to it or press Enter. Click a folder to fold or unfold it.
+  - **Hotkey:** in the editor, click the Hotkey field and press the keys, like Ctrl+Shift+C. Pressing them in a terminal, or anywhere outside a text field, then puts the prompt into the active session, unsent. A hotkey needs Ctrl, Alt or Cmd, or is an F-key; Ctrl+C, Ctrl+V and Ctrl+D stay Claude's. The editor says when a key would take over one of the app's shortcuts or a Claude Code key. Hotkeys match the physical keys, so they work with any keyboard layout.
   - Right-click in a terminal: **Paste from Bookmarks** lists your folders and prompts as submenus. **Add Selection to Bookmarks…** opens the editor with the selected text. Without a selection it offers **Add Copied Text to Bookmarks…**, because Claude in fullscreen copies what you drag over.
   - They are saved in `bookmarks.json` in the app's data folder. If that file is ever unreadable, a copy is kept next to it before it is replaced.
+- **Session notes:** the notepad button on the right of the sub-tab row shows or hides a notes column on the right of the session you are in. In a split, each pane's title bar has its own notepad button and each pane its own notes.
+  - Notes save as you type, with the layout, and come back after a restart; so does whether a session's notes are open. They belong to the tab, so `/clear` or `/resume` inside Claude keeps them.
+  - Esc in the notes takes you back to the terminal; × closes the column. A sub-tab with notes shows a small notepad.
+  - Drag the column's left edge to resize it; double-click the edge for the default width. All sessions share that width.
+  - Closing a session that has notes asks first, since its notes go with it.
+- **Claude Code's setup:** the puzzle button next to the bookmark button opens a window with what Claude Code reads and runs, for your user or for one of the open folders: skills, commands, agents, output styles and memory (CLAUDE.md files and rules); MCP servers, plugins and marketplaces; hooks, permissions, settings and keybindings; and the claude.ai account it is logged in with. Each section lists what is set and in which file, and lets you add, change or remove it; the window asks before throwing away unsaved changes.
 - **Search the scrollback:** **Ctrl+F** (Cmd+F on macOS) opens a search bar over the terminal. Matches are highlighted as you type, with a count; Enter and Shift+Enter go to the next and previous one, Esc closes it.
 - **Jump between your messages:** **Ctrl+↑ / Ctrl+↓** (Cmd+↑ / Cmd+↓ on macOS) in a Claude tab scrolls to your previous or next message to Claude, and flashes it.
 - **Claude's fullscreen renderer:** with `/tui fullscreen`, Claude draws its own screen and the conversation isn't in the terminal's scrollback. Search and the message jumps then first open Claude's transcript view (Ctrl+O) and have it write the whole conversation into the scrollback (`[`). Esc or `q` takes Claude back to its normal view.
@@ -243,6 +256,8 @@ The tag has to match the version in `package.json`. Review the draft under **Rel
 | Search the scrollback | Ctrl+F, Ctrl+Shift+F | Cmd+F |
 | Previous / next of your messages to Claude | Ctrl+↑ / Ctrl+↓ | Cmd+↑ / Cmd+↓ |
 | Snip a region of the screen into Claude's prompt | Ctrl+Shift+S | Cmd+Shift+S |
+| Put a bookmarked prompt into the session | its hotkey, set in the bookmark editor | same |
+| From a session's notes back to its terminal | Esc | same |
 | Font size bigger / smaller / reset | Ctrl+= / Ctrl+- / Ctrl+0, or Ctrl + mouse wheel | Cmd+= / Cmd+- / Cmd+0, or Cmd + wheel |
 
 All other keys go straight to claude, including Ctrl+C with nothing selected, Esc, Shift+Tab, Ctrl+R, Ctrl+S, Ctrl+T and Ctrl+Shift+- (undo). In a shell, Ctrl+↑ / Ctrl+↓ go to the shell too.

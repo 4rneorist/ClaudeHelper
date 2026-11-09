@@ -1,11 +1,12 @@
 import { Fragment, useContext, useRef, useState } from 'react'
-import { closeTerminal, tabAnchor, toggleTabSettings } from '../actions'
+import { closeTerminal, tabAnchor, toggleSessionNotes, toggleTabSettings } from '../actions'
 import { dragDivider, leaves, sideAt, type Dir, type LayoutNode, type Side } from '../layout'
 import { dotStatus, foreignFolder, useStore, type SubTab, type Workspace } from '../store'
 import { endDrag, fromFolder, startDrag } from '../dnd'
 import { tabColors } from '../tabColors'
 import { getTerminal } from '../terminal/TerminalSession'
 import { ThemeContext } from '../themeContext'
+import { NotesBar, NotesIcon } from './NotesBar'
 import { TerminalView } from './TerminalView'
 
 /** Smallest pane, in pixels, when dragging a divider. */
@@ -193,6 +194,16 @@ function PaneView({
           )}
           {terminal.termTitle && <span className="pane-subtitle">{terminal.termTitle}</span>}
           <button
+            className={`pane-close pane-notes${terminal.notesOpen ? ' pressed' : ''}`}
+            aria-label={`Notes for ${terminal.title}`}
+            aria-pressed={!!terminal.notesOpen}
+            title={terminal.notesOpen ? 'Hide notes' : 'Notes'}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => toggleSessionNotes(terminalKey)}
+          >
+            <NotesIcon size={13} />
+          </button>
+          <button
             className="pane-close pane-settings"
             aria-label={`Settings for ${terminal.title}`}
             title="Title and color"
@@ -217,16 +228,21 @@ function PaneView({
           </button>
         </div>
       )}
-      <div className="pane-body">
-        <TerminalView terminal={terminal} visible={ctx.visible} />
-        {canDrop && (
-          <DropZone
-            onDrop={(side) => {
-              useStore.getState().dockAt(drag, ctx.workspace.key, ctx.subTab.key, terminalKey, side)
-              endDrag()
-            }}
-          />
-        )}
+      <div className="pane-row">
+        <div className="pane-body">
+          <TerminalView terminal={terminal} visible={ctx.visible} />
+          {canDrop && (
+            <DropZone
+              onDrop={(side) => {
+                useStore
+                  .getState()
+                  .dockAt(drag, ctx.workspace.key, ctx.subTab.key, terminalKey, side)
+                endDrag()
+              }}
+            />
+          )}
+        </div>
+        {terminal.notesOpen && <NotesBar terminalKey={terminalKey} />}
       </div>
     </div>
   )

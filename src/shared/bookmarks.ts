@@ -16,6 +16,8 @@ export interface BookmarkPrompt {
   title: string
   /** What goes into the prompt, as is. */
   text: string
+  /** Keys that paste it into the terminal, like "Ctrl+Shift+C" (see hotkeys.ts). */
+  hotkey?: string
 }
 
 export type BookmarkNode = BookmarkFolder | BookmarkPrompt

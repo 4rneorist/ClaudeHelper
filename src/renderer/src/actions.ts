@@ -18,25 +18,47 @@ import { nextWaiting, type WaitKind } from './waiting'
 const isLive = (t: TerminalState | undefined): boolean =>
   t?.status === 'running' || t?.status === 'starting'
 
-/** Asks before stopping live processes, then disposes the terminals and drops them from layouts. */
+/**
+ * Asks before stopping live processes or deleting notes, then disposes the terminals and drops
+ * them from layouts.
+ */
 async function closeTerminals(keys: string[], scope: string): Promise<boolean> {
   const { terminals } = useStore.getState()
   const live = keys.filter((k) => isLive(terminals[k]))
+  const noted = keys.filter((k) => terminals[k]?.notes?.trim())
+  const notesGo =
+    noted.length === 0
+      ? ''
+      : keys.length === 1
+        ? 'Its notes are deleted too.'
+        : `The notes of ${noted.length} ${noted.length === 1 ? 'session' : 'sessions'} are deleted too.`
   if (live.length > 0) {
     const single = live.length === 1 && keys.length === 1 ? terminals[live[0]] : null
     const ok = await window.api.confirm(
       single
         ? {
             message: `Stop "${single.title}"?`,
-            detail: single.cwd,
+            detail: [single.cwd, notesGo].filter(Boolean).join('\n\n'),
             okLabel: 'Stop and close'
           }
         : {
             message: `Close ${scope}?`,
-            detail: `${live.length} running ${live.length === 1 ? 'process' : 'processes'} will be stopped.`,
+            detail: [
+              `${live.length} running ${live.length === 1 ? 'process' : 'processes'} will be stopped.`,
+              notesGo
+            ]
+              .filter(Boolean)
+              .join(' '),
             okLabel: 'Stop and close'
           }
     )
+    if (!ok) return false
+  } else if (noted.length > 0) {
+    const ok = await window.api.confirm({
+      message: keys.length === 1 ? `Close "${terminals[keys[0]].title}"?` : `Close ${scope}?`,
+      detail: notesGo,
+      okLabel: 'Close'
+    })
     if (!ok) return false
   }
   for (const key of keys) disposeTerminal(key)
@@ -218,5 +240,27 @@ export function jumpToWaiting(kind?: WaitKind): void {
 
 export function focusActiveTerminal(): void {
   const key = activeTerminalKey(useStore.getState())
-  if (key) getTerminal(key)?.focus()
+  // Writing in its notes is working in it too: the focus stays there.
+  if (key && !notesOf(key)?.contains(document.activeElement)) getTerminal(key)?.focus()
+}
+
+/** The textarea of a session's notes bar, if it is open. */
+function notesOf(key: string): HTMLTextAreaElement | null {
+  return document.querySelector<HTMLTextAreaElement>(
+    `.notes-bar[data-terminal="${CSS.escape(key)}"] textarea`
+  )
+}
+
+/**
+ * Opens or closes a session's notes bar (flips it without `open`), and puts the focus into the
+ * notes it opened, or back into the terminal.
+ */
+export function toggleSessionNotes(key: string, open?: boolean): void {
+  const { terminals, toggleNotes } = useStore.getState()
+  const t = terminals[key]
+  if (!t) return
+  const next = open ?? !t.notesOpen
+  toggleNotes(key, next)
+  // After React has shown or removed the bar.
+  requestAnimationFrame(() => (next ? notesOf(key)?.focus() : getTerminal(key)?.focus()))
 }

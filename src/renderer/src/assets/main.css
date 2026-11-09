@@ -95,6 +95,7 @@ textarea:focus-visible,
 input[type='text'],
 input[type='password'],
 input[type='number'],
+input[type='search'],
 textarea,
 select {
   font: inherit;
@@ -1111,10 +1112,108 @@ body.resizing-row * {
   background: color-mix(in srgb, currentColor 18%, transparent);
   opacity: 1;
 }
+.pane-notes {
+  display: flex;
+  align-items: center;
+}
+.pane-notes + .pane-close {
+  margin-left: 0;
+}
+.pane-header .pane-notes.pressed {
+  color: var(--text);
+  opacity: 1;
+}
+/* The terminal, and its notes bar on the right when open. */
+.pane-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
 .pane-body {
   position: relative;
   flex: 1;
+  min-width: 0;
   min-height: 0;
+}
+
+/* ---- session notes: a column on the right of a pane ---- */
+
+.notes-toggle {
+  display: flex;
+  align-items: center;
+}
+.notes-toggle.pressed {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.notes-bar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* The width comes from the settings, inline; a narrow pane keeps room for its terminal. */
+  width: 260px;
+  max-width: calc(100% - 120px);
+  flex-shrink: 0;
+  min-height: 0;
+  background: var(--bg-elev);
+  border-left: 1px solid var(--border);
+  font-size: 13px;
+}
+/* The bar's left edge, dragged to resize it: a strip over the border, lit while hovered. */
+.notes-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 7px;
+  z-index: 3;
+  cursor: col-resize;
+  touch-action: none;
+}
+.notes-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+}
+.notes-resizer:hover::after,
+.notes-resizer.dragging::after {
+  left: 2px;
+  width: 3px;
+  background: var(--accent);
+}
+.notes-bar header {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 4px 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+.notes-bar header strong {
+  flex: 1;
+}
+.notes-bar textarea {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  resize: none;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  user-select: text;
+}
+:root[data-theme='dark'] .notes-bar textarea {
+  background: var(--term-bg);
+}
+.notes-bar textarea::placeholder {
+  color: var(--muted);
 }
 
 .drop-zone {
@@ -1411,14 +1510,16 @@ body.resizing-row * {
 
 /* ---- muting and Do not disturb ---- */
 
-.tab-muted {
+.tab-muted,
+.tab-notes {
   display: flex;
   flex-shrink: 0;
   color: var(--muted);
   opacity: 0.85;
 }
 .tab.colored .tab-muted,
-.subtab.colored .tab-muted {
+.subtab.colored .tab-muted,
+.subtab.colored .tab-notes {
   color: inherit;
 }
 .tab-settings-mute,
@@ -1732,5 +1833,632 @@ fieldset.telegram select {
   min-height: 120px;
   resize: vertical;
   font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+/* ---- the Claude Code window: skills, agents, hooks and plugins ---- */
+
+dialog.claude-config {
+  width: min(1240px, calc(100% - 40px));
+  height: min(800px, calc(100% - 40px));
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+dialog.claude-config::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+.cc {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.cc-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px 10px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.cc-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.cc-tabs {
+  display: flex;
+  gap: 2px;
+}
+.cc-tab {
+  border: none;
+  background: none;
+  padding: 5px 12px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.cc-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.cc-tab.active {
+  background: var(--bg-elev);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.cc-grow {
+  flex: 1;
+}
+.cc-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.cc-folder select {
+  max-width: 240px;
+}
+.cc-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.cc-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 160px;
+  flex-shrink: 0;
+  padding: 10px 8px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+.cc-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cc-nav-title {
+  padding: 2px 10px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cc-nav .cc-tab {
+  width: 100%;
+  text-align: left;
+}
+.cc-nav .cc-tab.active {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.cc-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.cc-split {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  height: 100%;
+}
+.cc-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.cc-list-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px;
+}
+.cc-list-tools .primary {
+  padding: 5px 10px;
+}
+.cc-search {
+  flex: 1;
+  min-width: 0;
+}
+.cc-segment {
+  display: flex;
+  margin: 0 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.cc-segment button {
+  flex: 1;
+  border: none;
+  border-radius: 0;
+  background: none;
+  padding: 4px 8px;
+  color: var(--muted);
+}
+.cc-segment button[aria-pressed='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+  font-weight: 600;
+}
+.cc-list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+.cc-group h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0 2px;
+  padding: 0 10px 0 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.cc-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.cc-link:hover {
+  background: none;
+  text-decoration: underline;
+}
+.cc-empty {
+  margin: 4px 0;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+.cc-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cc-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: none;
+  padding: 6px 12px;
+  text-align: left;
+}
+.cc-row:hover {
+  background: var(--bg-hover);
+}
+.cc-row.selected {
+  background: var(--bg-hover);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.cc-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.cc-row-desc {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-mono,
+.cc-code,
+.cc-details {
+  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+}
+.cc-chip {
+  font-weight: normal;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cc-warn {
+  color: var(--warn);
+}
+.cc-badge {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.cc-badge.on {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 50%, transparent);
+}
+.cc-badge.warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 50%, transparent);
+}
+.cc-badge.bad {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 50%, transparent);
+}
+.cc-editor-head h3 .cc-badge {
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.cc-detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.cc-intro {
+  max-width: 640px;
+  padding: 24px 28px;
+  overflow-y: auto;
+  line-height: 1.55;
+  user-select: text;
+}
+.cc-intro h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.cc-docs {
+  color: var(--accent);
+}
+.cc-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.cc-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px 10px;
+}
+.cc-editor-head > div:first-child {
+  min-width: 0;
+}
+.cc-editor-head button {
+  white-space: nowrap;
+}
+.cc-editor-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.cc-path {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+.cc-fields {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 18px 12px;
+  overflow-y: auto;
+}
+.cc-fields input[type='text'],
+.cc-fields textarea,
+.cc-fields .field select {
+  width: 100%;
+}
+.cc-fields input[type='number'] {
+  width: 140px;
+}
+.cc-fields textarea {
+  resize: vertical;
+}
+.cc-row-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.cc-grow-field {
+  flex: 1;
+  min-height: 200px;
+}
+.cc-grow-field textarea {
+  flex: 1;
+  min-height: 180px;
+  resize: none;
+}
+.cc-code {
+  font-size: 12px;
+  line-height: 1.5;
+  tab-size: 2;
+}
+.cc-editor-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--border);
+}
+.cc-status {
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+button.danger {
+  color: var(--err);
+}
+.cc-plugin h4 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cc-plugin-desc {
+  margin: 0;
+  line-height: 1.5;
+  user-select: text;
+}
+.cc-installs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cc-installs li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.cc-install-what {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cc-install-what .cc-badge {
+  margin-left: 6px;
+}
+.cc-install-actions {
+  display: flex;
+  gap: 6px;
+}
+.cc-install-actions button {
+  padding: 4px 10px;
+}
+.cc-plugin .row select {
+  flex: 1;
+  min-width: 0;
+}
+.cc-details {
+  margin: 0;
+  padding: 10px;
+  overflow-x: auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  user-select: text;
+}
+.cc-note {
+  margin: 0;
+}
+.cc-strings h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.cc-strings h4 .muted {
+  font-weight: normal;
+}
+.cc-strings ul {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+.cc-strings li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 2px 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.cc-strings li code {
+  padding: 0;
+  overflow-wrap: anywhere;
+  background: none;
+}
+.cc-strings .row {
+  flex-wrap: nowrap;
+}
+.cc-fields .cc-strings .row input[type='text'] {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+.cc-fields .cc-env input[type='text']:first-child {
+  flex: 0 0 34%;
+}
+.cc-env {
+  margin-bottom: 4px;
+}
+.cc-keys {
+  width: 100%;
+  border-collapse: collapse;
+}
+.cc-keys th {
+  padding: 0 6px 4px 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.cc-keys td {
+  padding: 3px 6px 3px 0;
+  vertical-align: top;
+}
+.cc-keys td input[type='text'],
+.cc-keys td select {
+  width: 100%;
+}
+.cc-keys td small {
+  display: block;
+  margin-top: 2px;
+}
+.cc-keys tr.bad td input[type='text'] {
+  border-color: var(--err);
+}
+.cc-keys td.cc-center {
+  text-align: center;
+  vertical-align: middle;
+}
+.cc-account {
+  max-width: 340px;
+  overflow: hidden;
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-account.out {
+  color: var(--warn);
+}
+.cc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.cc-card h4 {
+  margin: 0;
+  font-size: 13px;
+}
+.cc-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0;
+}
+.cc-facts dt {
+  color: var(--muted);
+}
+.cc-facts dd {
+  margin: 0;
+  user-select: text;
+}
+.cc-policies {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cc-policies li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cc-policies .cc-badge {
+  min-width: 76px;
+  text-align: center;
+}
+.cc-notice {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--warn);
+  background: var(--bg-elev);
+}
+.cc-wide .cc-fields {
+  max-width: 900px;
+}
+.cc-editor-head h3 .cc-badge {
+  margin-left: 6px;
+}
+.cc-loading {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.cc-spinner {
+  flex-shrink: 0;
+  margin-top: 2px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: cc-spin 0.8s linear infinite;
+}
+@keyframes cc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cc-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+/* ---- bookmark hotkeys ---- */
+
+.bookmark-key {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.bookmark-row:hover .bookmark-key,
+.bookmark-row:focus-within .bookmark-key {
+  visibility: hidden;
+}
+.hotkey-row {
+  flex-wrap: nowrap;
+}
+.bookmark-editor .hotkey-input {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  caret-color: transparent;
+}
+.bookmark-editor .hotkey-row button {
+  padding: 4px 8px;
   font-size: 12px;
 }

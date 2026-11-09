@@ -6,6 +6,12 @@ It tells you when a session is done or needs your answer: with a sound, on its t
 
 **[Download the latest release](https://github.com/4rneorist/ClaudeHelper/releases/latest).** It has installers for Windows (`.exe`), macOS (`.dmg`, Apple Silicon) and Linux (`.AppImage` and `.deb`). You also need the Claude Code CLI, see [Install](#install).
 
+### What's new in 1.2.0
+
+- **Notes for each session.** A notepad button opens a column on the right of a session for your own notes. Each session has its own, they save as you type, and they come back after a restart. Drag the column's edge to make it wider.
+- **Claude Code's setup in one window.** The puzzle button shows your skills, commands, agents, output styles, memory, MCP servers, plugins, marketplaces, hooks, permissions, settings and keybindings, your own or a folder's, and lets you change them.
+- **Hotkeys for bookmarked prompts.** Give a prompt a key like Ctrl+Shift+C and pressing it puts the prompt into the session, unsent.
+
 ### What's new in 1.1.0
 
 - **Claude on your phone.** Your own Telegram bot (optional) says when a session finishes or needs you, headed `✅ IDLE`, `🔔 NEED YOUR ATTENTION` or `⏰ STILL NEEDS YOUR ATTENTION`. With remote control on, you can answer Claude's questions with a tap (or with numbers and your own words where it takes several answers), send prompts, read what a chat shows, and open new chats. Claude's whole reply comes back when it is done, formatted for a phone, tables included. With Threaded Mode on for the bot, each session gets its own topic.
@@ -41,7 +47,9 @@ Details for each are under [Features](#features).
 - **Old conversations a click away.** The start screen lists the last conversations in each recent folder; click one to resume it.
 - **A shell next to Claude.** PowerShell, Command Prompt, Git Bash and WSL on Windows; your login shell, bash, zsh and fish on macOS and Linux.
 - **Answer from anywhere.** With your own Telegram bot, Claude's questions, calls and replies reach your phone, and you can answer and send prompts from there. Only your own chat with the bot is obeyed.
-- **Prompts you use again, at hand.** Bookmarked prompts in folders, a search over the scrollback, and file paths you can click open.
+- **Prompts you use again, at hand.** Bookmarked prompts in folders, each on a hotkey if you like, a search over the scrollback, and file paths you can click open.
+- **Notes next to each session.** A column on the right of a session for what you want to remember about it: what to check, what to ask next. Each session keeps its own, across restarts.
+- **Claude Code's setup without hunting for files.** Skills, agents, hooks, MCP servers, plugins, memory, permissions and keybindings, yours or a folder's, in one window where you can read and change them.
 
 ## Screenshots
 
@@ -154,8 +162,15 @@ Then run `claude` once in a terminal to log in. The app finds `claude` by itself
 - **Bookmarked prompts:** the bookmark button next to ⚙ shows or hides a column on the right with your saved prompts. It stays open or closed across restarts.
   - **+** adds a prompt, and the folder button adds a folder, at the top level. Hold the mouse over a folder to add a prompt or a subfolder in it, or to edit (✎) or delete it; prompts have ✎ and delete too. The editor sets the title, the text and the folder, so it also moves things between folders. Without a title, a prompt is named after its first line. Folders nest up to 8 levels deep.
   - Click a prompt to put it into the active session's prompt, unsent, so you can add to it or press Enter. Click a folder to fold or unfold it.
+  - **Hotkey:** in the editor, click the Hotkey field and press the keys, like Ctrl+Shift+C. Pressing them in a terminal, or anywhere outside a text field, then puts the prompt into the active session, unsent. A hotkey needs Ctrl, Alt or Cmd, or is an F-key; Ctrl+C, Ctrl+V and Ctrl+D stay Claude's. The editor says when a key would take over one of the app's shortcuts or a Claude Code key. Hotkeys match the physical keys, so they work with any keyboard layout.
   - Right-click in a terminal: **Paste from Bookmarks** lists your folders and prompts as submenus. **Add Selection to Bookmarks…** opens the editor with the selected text. Without a selection it offers **Add Copied Text to Bookmarks…**, because Claude in fullscreen copies what you drag over.
   - They are saved in `bookmarks.json` in the app's data folder. If that file is ever unreadable, a copy is kept next to it before it is replaced.
+- **Session notes:** the notepad button on the right of the sub-tab row shows or hides a notes column on the right of the session you are in. In a split, each pane's title bar has its own notepad button and each pane its own notes.
+  - Notes save as you type, with the layout, and come back after a restart; so does whether a session's notes are open. They belong to the tab, so `/clear` or `/resume` inside Claude keeps them.
+  - Esc in the notes takes you back to the terminal; × closes the column. A sub-tab with notes shows a small notepad.
+  - Drag the column's left edge to resize it; double-click the edge for the default width. All sessions share that width.
+  - Closing a session that has notes asks first, since its notes go with it.
+- **Claude Code's setup:** the puzzle button next to the bookmark button opens a window with what Claude Code reads and runs, for your user or for one of the open folders: skills, commands, agents, output styles and memory (CLAUDE.md files and rules); MCP servers, plugins and marketplaces; hooks, permissions, settings and keybindings; and the claude.ai account it is logged in with. Each section lists what is set and in which file, and lets you add, change or remove it; the window asks before throwing away unsaved changes.
 - **Search the scrollback:** **Ctrl+F** (Cmd+F on macOS) opens a search bar over the terminal. Matches are highlighted as you type, with a count; Enter and Shift+Enter go to the next and previous one, Esc closes it.
 - **Jump between your messages:** **Ctrl+↑ / Ctrl+↓** (Cmd+↑ / Cmd+↓ on macOS) in a Claude tab scrolls to your previous or next message to Claude, and flashes it.
 - **Claude's fullscreen renderer:** with `/tui fullscreen`, Claude draws its own screen and the conversation isn't in the terminal's scrollback. Search and the message jumps then first open Claude's transcript view (Ctrl+O) and have it write the whole conversation into the scrollback (`[`). Esc or `q` takes Claude back to its normal view.
@@ -243,6 +258,8 @@ The tag has to match the version in `package.json`. Review the draft under **Rel
 | Search the scrollback | Ctrl+F, Ctrl+Shift+F | Cmd+F |
 | Previous / next of your messages to Claude | Ctrl+↑ / Ctrl+↓ | Cmd+↑ / Cmd+↓ |
 | Snip a region of the screen into Claude's prompt | Ctrl+Shift+S | Cmd+Shift+S |
+| Put a bookmarked prompt into the session | its hotkey, set in the bookmark editor | same |
+| From a session's notes back to its terminal | Esc | same |
 | Font size bigger / smaller / reset | Ctrl+= / Ctrl+- / Ctrl+0, or Ctrl + mouse wheel | Cmd+= / Cmd+- / Cmd+0, or Cmd + wheel |
 
 All other keys go straight to claude, including Ctrl+C with nothing selected, Esc, Shift+Tab, Ctrl+R, Ctrl+S, Ctrl+T and Ctrl+Shift+- (undo). In a shell, Ctrl+↑ / Ctrl+↓ go to the shell too.
@@ -261,6 +278,7 @@ Other mouse actions:
 Renderer (React + xterm.js)  ──window.api (preload, contextBridge)──▶  Main process
   TabBar (folders) → WorkspaceView (sub-tabs)                          ipc.ts (validates every call)
     → LayoutView (split tree of panes) → TerminalView                  sessionManager.ts (node-pty, output batching)
+      + NotesBar (each pane's own notes)
   terminal/TerminalSession.ts (one xterm per terminal,                 claudeResolver.ts (find claude, build env)
     survives being moved between panes and tabs)                       shells.ts (detect installed shells)
   terminal/claudeActivity.ts (working / idle / asking,                 claudeSessions.ts (past sessions per folder)
@@ -268,22 +286,25 @@ Renderer (React + xterm.js)  ──window.api (preload, contextBridge)──▶ 
   attention.ts + waiting.ts + sounds.ts (sounds, toasts, bell list,    settingsStore.ts (JSON in userData)
     what waits, reminders) → Notifications, StatusBar                  attention.ts (OS notifications) / taskbar.ts
   gitPolling.ts (branch per folder)                                    gitInfo.ts (branch, uncommitted changes)
+  BookmarksPanel (prompts, hotkeys)                                    bookmarksStore.ts (bookmarks.json)
+  claudeConfig/ClaudeConfigDialog (the "Claude Code" window)           claudeConfig*.ts, claudeMcp.ts, claudeMemory.ts,
+                                                                         claudePlugins.ts, claudeSettings.ts (~/.claude, .claude)
 ```
 
 The store (`src/renderer/src/store.ts`) has three levels:
 1. **Workspaces:** folders. Two can be joined (`joinedTo`) to show side by side.
 2. **Sub-tabs:** each sub-tab holds a split layout.
-3. **Terminals:** the layout's leaves. Terminals are stored flat by key, so moving one between layouts never restarts its process.
+3. **Terminals:** the layout's leaves. Terminals are stored flat by key, so moving one between layouts never restarts its process. A terminal also carries its notes and whether its notes bar is open; both are saved with the layout.
 
 The split and dock rules are pure functions in `layout.ts`.
 
 | Path | Contents |
 |---|---|
-| `src/shared/ipc.ts` | The one contract (channels and types) between main, preload and renderer; `questions.ts` words Claude's questions for Telegram; `screenTables.ts` makes Claude's tables fit a phone |
-| `src/main/` | Electron main process: window hardening, IPC handlers, PTY sessions, shells, past sessions, settings, bookmarks (`bookmarksStore.ts`), Telegram (`telegram.ts`; remote control in `telegramBot.ts`; Claude's replies formatted in `telegramMarkdown.ts`; a topic per session in `telegramTopics.ts`), OS notifications and the taskbar button, git branch, screen snips (`snip.ts`) |
+| `src/shared/ipc.ts` | The one contract (channels and types) between main, preload and renderer; `questions.ts` words Claude's questions for Telegram; `screenTables.ts` makes Claude's tables fit a phone; `uiState.ts` is the saved layout (with each session's notes); `hotkeys.ts` names and checks bookmark hotkeys; `claudeConfig.ts` and `frontmatter.ts` describe what the "Claude Code" window manages and read and write skills' and agents' frontmatter |
+| `src/main/` | Electron main process: window hardening, IPC handlers, PTY sessions, shells, past sessions, settings, bookmarks (`bookmarksStore.ts`), Telegram (`telegram.ts`; remote control in `telegramBot.ts`; Claude's replies formatted in `telegramMarkdown.ts`; a topic per session in `telegramTopics.ts`), OS notifications and the taskbar button, git branch, screen snips (`snip.ts`). The "Claude Code" window's files: skills, commands, agents, output styles and hooks (`claudeConfig.ts`), memory (`claudeMemory.ts`), settings and keybindings (`claudeSettings.ts`), MCP servers (`claudeMcp.ts`, through `claude mcp`), plugins and marketplaces (`claudePlugins.ts`, through `claude plugin`), what comes from your account and plugins (`claudeExtras.ts`), and the checks on every request from it (`claudeConfigChecks.ts`) |
 | `src/preload/` | The minimal, typed `window.api` bridge |
-| `src/renderer/src/` | React UI. Pure, tested functions: `layout.ts` (split/dock tree), `tabColors.ts` (tab colors and readable titles), `terminal/keybindings.ts`, `terminal/claudeActivity.ts` (what Claude is doing, from its title and screen; where your messages are), `jira.ts` (the ticket key in a branch name), `bookmarks.ts` (the bookmark tree: add, edit, move, remove), `waiting.ts` (which sessions wait, in what order, reminders) and `telegramChats.ts` (the chats Telegram lists and finds by name, the answers you send, topic names). `telegramCommands.ts` carries out what you send the bot; `telegramTopics.ts` keeps each tab's topic, its name and colour |
-| `tests/unit/` | Vitest tests for path resolution, session management, past-session parsing, shell detection, layouts, settings, tabs, joined folders, Claude's activity, what waits, notifications, git info, tab colors, validation and keybindings |
+| `src/renderer/src/` | React UI. Pure, tested functions: `layout.ts` (split/dock tree), `tabColors.ts` (tab colors and readable titles), `terminal/keybindings.ts`, `terminal/claudeActivity.ts` (what Claude is doing, from its title and screen; where your messages are), `jira.ts` (the ticket key in a branch name), `bookmarks.ts` (the bookmark tree: add, edit, move, remove), `waiting.ts` (which sessions wait, in what order, reminders) and `telegramChats.ts` (the chats Telegram lists and finds by name, the answers you send, topic names). `telegramCommands.ts` carries out what you send the bot; `telegramTopics.ts` keeps each tab's topic, its name and colour. `hotkeyNotes.ts` says which app or Claude Code keys a bookmark's hotkey takes over; `keybindingCatalog.ts` lists Claude Code's keybinding actions for the keybindings editor; `components/NotesBar.tsx` is a session's notes column; `components/claudeConfig/` is the "Claude Code" window |
+| `tests/unit/` | Vitest tests for path resolution, session management, past-session parsing, shell detection, layouts, settings, tabs, joined folders, Claude's activity, what waits, notifications, git info, tab colors, validation, keybindings, bookmarks and their hotkeys, session notes (saved, checked and restored), and the "Claude Code" window (items, frontmatter, MCP, memory, plugins, settings) |
 | `tests/e2e/` | Playwright tests that drive the built app. A fake `claude` reports how it was launched, echoes input, and can work, finish and ask like the real one |
 | `scripts/` | `build-linux-docker.mjs`, which builds the Linux installers in Docker |
 | `docs/screenshots/` | The screenshots in this README |
@@ -292,6 +313,7 @@ The split and dock rules are pure functions in `layout.ts`.
 
 - **Renderer sandbox:** the renderer runs sandboxed with context isolation and no Node access. It has a strict CSP and cannot navigate away.
 - **Main process checks:** the main process validates every IPC argument (session ids, terminal sizes, folders, URLs) and only accepts calls from its own window.
+- **The "Claude Code" window:** the renderer never names a file to read or write. Main works out every path itself from a scope (yours or a folder's), a project folder that is open, and a plain item name, and rebuilds each request from the fields it knows.
 - **Links:** only `http(s)` links open externally. A file path opens only if it exists, and a program or script is shown in its folder instead of being run.
 - **Telegram remote control:** off by default. When on, main obeys only messages and button presses from the configured private chat, and drops anything written before the app started. Buttons work only on messages sent in the current run, and an answer is typed only while that same question is on screen. Commands can't run shell tabs; they only reach Claude chats.
 

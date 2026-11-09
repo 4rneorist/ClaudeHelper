@@ -40,6 +40,71 @@ import {
 } from './claudeResolver'
 import { bookmarkMenuItems, type BookmarksStore } from './bookmarksStore'
 import {
+  deleteHook,
+  deleteItem,
+  hooksFile,
+  itemsDir,
+  listHookFile,
+  listItems,
+  readItem,
+  rootOf,
+  saveHook,
+  saveItem,
+  type ConfigPlaces
+} from './claudeConfig'
+import {
+  checkFolder,
+  checkHookChange,
+  checkHookEntry,
+  checkItemRef,
+  checkKeybindingsSave,
+  checkMarketplaceRequest,
+  checkMcpRemove,
+  checkMcpSave,
+  checkMemoryRef,
+  checkPluginRequest,
+  checkSaveItem,
+  checkSaveMemory,
+  checkSettingsPatch
+} from './claudeConfigChecks'
+import {
+  claudeRunner,
+  listMarketplaces,
+  listPlugins,
+  pluginDetails,
+  runMarketplaceAction,
+  runPluginAction
+} from './claudePlugins'
+import { globalConfigFile, listMcp, mcpStatus, removeMcp, saveMcp } from './claudeMcp'
+import { authStatus, listExtras, logout, orgPolicies } from './claudeExtras'
+import { listMemory, memoryPath, readMemory, saveMemory } from './claudeMemory'
+import {
+  keybindingsPath,
+  patchSettings,
+  readKeybindings,
+  readSettingsFile,
+  saveKeybindings
+} from './claudeSettings'
+import {
+  HOOK_SCOPES,
+  ITEM_KINDS,
+  PLUGIN_ID,
+  type ItemKind,
+  type ConfigResult,
+  type HookFile,
+  type MarketplaceList,
+  type McpList,
+  type McpStatusList,
+  type AuthResult,
+  type ExtrasList,
+  type OrgPolicies,
+  CLAUDE_LOGIN_SHELL,
+  type MemoryFile,
+  type PluginActionResult,
+  type PluginList,
+  type SettingsFile
+} from '../shared/claudeConfig'
+import {
   claudeConfigDir,
   finishedTurn,
   listPastSessions,
@@ -173,6 +238,13 @@ export function registerIpc(ctx: IpcContext): void {
         ? knownSessionArgs(knownId, isFile(transcriptPath(configDir(), req.cwd, knownId)))
         : launchArgs(spec.mode)
       command = buildCommand(claude, args, process.platform, ctx.getEnv())
+    } else if (spec.shellId === CLAUDE_LOGIN_SHELL) {
+      // Logging in to Claude Code, in a terminal: it may ask for a code from the browser.
+      const claude = findClaude(explicitClaudePath(), resolveDeps())
+      if (!claude) {
+        return { ok: false, code: 'CLAUDE_NOT_FOUND', error: 'Could not find the claude executable' }
+      }
+      command = buildCommand(claude, ['auth', 'login'], process.platform, ctx.getEnv())
     } else {
       const shell = detectShells(resolveDeps()).find((s) => s.id === spec.shellId)
       if (!shell) {
@@ -537,4 +609,219 @@ export function registerIpc(ctx: IpcContext): void {
   handle(IPC.gitInfo, (folder: unknown) =>
     isAbsoluteFolderPath(folder) ? gitInfo(folder, ctx.getEnv()) : null
   )
+
+  // ---- the "Claude Code" window: skills, agents, hooks and plugins ----
+
+  const places = (folder?: string): ConfigPlaces => ({ userDir: configDir(), folder })
+  const INVALID: ConfigResult = { ok: false, error: 'Invalid request' }
+
+  handle(IPC.claudeItemsList, async (kind: unknown, input: unknown) => {
+    const folder = checkFolder(input)
+    if (!(ITEM_KINDS as readonly unknown[]).includes(kind) || folder === null) return null
+    const k = kind as ItemKind
+    const projectRoot = rootOf('project', places(folder))
+    const project = projectRoot ? await listItems(k, 'project', projectRoot, folder) : []
+    return {
+      items: [...project, ...(await listItems(k, 'user', configDir()))],
+      userDir: itemsDir(k, configDir()),
+      projectDir: projectRoot ? itemsDir(k, projectRoot) : null
+    }
+  })
+  handle(IPC.claudeItemRead, (input: unknown) => {
+    const ref = checkItemRef(input)
+    const root = ref && rootOf(ref.scope, places(ref.folder))
+    return ref && root ? readItem(ref.kind, root, ref.name) : null
+  })
+  handle(IPC.claudeItemSave, (input: unknown): ConfigResult | Promise<ConfigResult> => {
+    const req = checkSaveItem(input)
+    const root = req && rootOf(req.ref.scope, places(req.ref.folder))
+    return req && root ? saveItem(req.ref, root, req.text, req.from) : INVALID
+  })
+  handle(IPC.claudeItemDelete, (input: unknown): ConfigResult | Promise<ConfigResult> => {
+    const ref = checkItemRef(input)
+    const root = ref && rootOf(ref.scope, places(ref.folder))
+    return ref && root ? deleteItem(ref.kind, root, ref.name, (p) => shell.trashItem(p)) : INVALID
+  })
+
+  handle(IPC.claudeHooksList, (input: unknown): Promise<HookFile[]> | HookFile[] => {
+    const folder = checkFolder(input)
+    if (folder === null) return []
+    const files = HOOK_SCOPES.flatMap((scope) => {
+      const file = hooksFile(scope, places(folder))
+      return file ? [listHookFile(scope, file)] : []
+    })
+    return Promise.all(files)
+  })
+  handle(IPC.claudeHookSave, (input: unknown): ConfigResult | Promise<ConfigResult> => {
+    const change = checkHookChange(input)
+    const file = change && hooksFile(change.scope, places(change.folder))
+    if (!change || !file) return INVALID
+    const { original } = change
+    const from = original && hooksFile(original.scope, places(change.folder))
+    if (original && !from) return INVALID
+    return saveHook(file, change, original && from ? { file: from, entry: original } : undefined)
+  })
+  handle(IPC.claudeHookDelete, (input: unknown): ConfigResult | Promise<ConfigResult> => {
+    const r = input as Record<string, unknown> | null
+    const entry = checkHookEntry(r?.entry)
+    const folder = checkFolder(r?.folder)
+    const file = entry && folder !== null && hooksFile(entry.scope, places(folder))
+    return entry && file ? deleteHook(file, entry) : INVALID
+  })
+
+  // Through Claude Code's own CLI, which knows the marketplaces.
+  const claudeCli = (): ReturnType<typeof claudeRunner> | null => {
+    const claude = findClaude(explicitClaudePath(), resolveDeps())
+    return claude ? claudeRunner(claude, buildEnv(ctx.getEnv()), process.platform) : null
+  }
+  const NO_CLAUDE = 'Could not find the claude executable (see Settings)'
+  handle(IPC.claudePluginsList, (input: unknown): PluginList | Promise<PluginList> => {
+    const folder = checkFolder(input)
+    const run = claudeCli()
+    if (folder === null) return { ok: false, error: 'Invalid request' }
+    // Asked in the folder, so its own plugins show as enabled or not.
+    return run ? listPlugins(run, folder ?? ctx.homedir) : { ok: false, error: NO_CLAUDE }
+  })
+  handle(IPC.claudePluginDetails, (id: unknown, input: unknown): string | Promise<string> => {
+    const folder = checkFolder(input)
+    const run = claudeCli()
+    if (typeof id !== 'string' || !PLUGIN_ID.test(id) || folder === null) return 'Invalid request'
+    return run ? pluginDetails(run, id, folder ?? ctx.homedir) : NO_CLAUDE
+  })
+  handle(
+    IPC.claudePluginAction,
+    (input: unknown): PluginActionResult | Promise<PluginActionResult> => {
+      const req = checkPluginRequest(input)
+      const run = claudeCli()
+      if (!req) return { ok: false, error: 'Invalid request' }
+      if (!run) return { ok: false, error: NO_CLAUDE }
+      // A project's plugins are changed from inside that project.
+      return runPluginAction(run, req, req.folder ?? ctx.homedir)
+    }
+  )
+
+  handle(IPC.claudeMarketplaces, (input: unknown): MarketplaceList | Promise<MarketplaceList> => {
+    const folder = checkFolder(input)
+    const run = claudeCli()
+    if (folder === null) return { ok: false, error: 'Invalid request' }
+    return run ? listMarketplaces(run, folder ?? ctx.homedir) : { ok: false, error: NO_CLAUDE }
+  })
+  handle(
+    IPC.claudeMarketplaceAction,
+    (input: unknown): PluginActionResult | Promise<PluginActionResult> => {
+      const req = checkMarketplaceRequest(input)
+      const run = claudeCli()
+      if (!req) return { ok: false, error: 'Invalid request' }
+      if (!run) return { ok: false, error: NO_CLAUDE }
+      return runMarketplaceAction(run, req, req.folder ?? ctx.homedir)
+    }
+  )
+
+  // Memory files: CLAUDE.md, rules, and Claude's own notes.
+  handle(IPC.claudeMemoryList, (input: unknown): MemoryFile[] | Promise<MemoryFile[]> => {
+    const folder = checkFolder(input)
+    return folder === null ? [] : listMemory(places(folder))
+  })
+  handle(IPC.claudeMemoryRead, (input: unknown) => {
+    const ref = checkMemoryRef(input)
+    const file = ref && memoryPath(ref, places(ref.folder))
+    return file ? readMemory(file) : null
+  })
+  handle(IPC.claudeMemorySave, (input: unknown): ConfigResult | Promise<ConfigResult> => {
+    const req = checkSaveMemory(input)
+    if (!req) return INVALID
+    return saveMemory(req.ref, places(req.ref.folder), req.text, req.before, req.from)
+  })
+  handle(IPC.claudeMemoryDelete, async (input: unknown): Promise<ConfigResult> => {
+    const ref = checkMemoryRef(input)
+    const file = ref && memoryPath(ref, places(ref.folder))
+    if (!file) return INVALID
+    if ((await readMemory(file)) === null) return { ok: false, error: 'It is no longer there' }
+    try {
+      await shell.trashItem(file)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // MCP servers: read from Claude Code's files, changed through `claude mcp`.
+  const mcpFile = (): string => globalConfigFile(ctx.getEnv(), ctx.homedir)
+  handle(IPC.claudeMcpList, (input: unknown): McpList | Promise<McpList> => {
+    const folder = checkFolder(input)
+    if (folder === null) {
+      return {
+        servers: [],
+        files: { user: null, project: null, local: null },
+        error: 'Invalid request'
+      }
+    }
+    return listMcp(mcpFile(), folder, process.platform)
+  })
+  handle(IPC.claudeMcpSave, async (input: unknown): Promise<ConfigResult> => {
+    const req = checkMcpSave(input)
+    const run = claudeCli()
+    if (!req) return INVALID
+    if (!run) return { ok: false, error: NO_CLAUDE }
+    const { original } = req
+    const previous = original
+      ? (await listMcp(mcpFile(), req.folder, process.platform)).servers.find(
+          (s) => s.name === original.name && s.scope === original.scope
+        )?.config
+      : undefined
+    if (original && !previous) return { ok: false, error: `"${original.name}" is no longer there` }
+    return saveMcp(run, req.folder ?? ctx.homedir, req, previous)
+  })
+  handle(IPC.claudeMcpRemove, (input: unknown): ConfigResult | Promise<ConfigResult> => {
+    const req = checkMcpRemove(input)
+    const run = claudeCli()
+    if (!req) return INVALID
+    return run ? removeMcp(run, req.folder ?? ctx.homedir, req) : { ok: false, error: NO_CLAUDE }
+  })
+  // What comes from claude.ai and plugins; your account; your organization's rules.
+  handle(IPC.claudeExtras, (input: unknown): ExtrasList | Promise<ExtrasList> => {
+    const folder = checkFolder(input)
+    if (folder === null) return { items: [], hooks: [], error: 'Invalid request' }
+    return listExtras(claudeCli(), folder ?? ctx.homedir, configDir())
+  })
+  handle(IPC.claudeAuthStatus, (): AuthResult | Promise<AuthResult> => {
+    const run = claudeCli()
+    return run ? authStatus(run, ctx.homedir) : { ok: false, error: NO_CLAUDE }
+  })
+  handle(IPC.claudeLogout, (): AuthResult | Promise<AuthResult> => {
+    const run = claudeCli()
+    return run ? logout(run, ctx.homedir) : { ok: false, error: NO_CLAUDE }
+  })
+  handle(IPC.claudeOrgPolicies, (): Promise<OrgPolicies> => orgPolicies(configDir(), process.platform))
+
+  // How each server is doing, claude.ai connectors and plugins' servers included (slow).
+  handle(IPC.claudeMcpStatus, (input: unknown): McpStatusList | Promise<McpStatusList> => {
+    const folder = checkFolder(input)
+    const run = claudeCli()
+    if (folder === null) return { ok: false, error: 'Invalid request' }
+    return run ? mcpStatus(run, folder ?? ctx.homedir) : { ok: false, error: NO_CLAUDE }
+  })
+
+  // Permissions, model, output style, environment and status line, file by file.
+  handle(IPC.claudeSettingsRead, (input: unknown): SettingsFile[] | Promise<SettingsFile[]> => {
+    const folder = checkFolder(input)
+    if (folder === null) return []
+    return Promise.all(
+      HOOK_SCOPES.flatMap((scope) => {
+        const file = hooksFile(scope, places(folder))
+        return file ? [readSettingsFile(scope, file)] : []
+      })
+    )
+  })
+  handle(IPC.claudeSettingsPatch, (input: unknown): ConfigResult | Promise<ConfigResult> => {
+    const patch = checkSettingsPatch(input)
+    const file = patch && hooksFile(patch.scope, places(patch.folder))
+    return patch && file ? patchSettings(file, patch.set, patch.before) : INVALID
+  })
+
+  handle(IPC.claudeKeybindingsRead, () => readKeybindings(keybindingsPath(configDir())))
+  handle(IPC.claudeKeybindingsSave, (input: unknown): ConfigResult | Promise<ConfigResult> => {
+    const req = checkKeybindingsSave(input)
+    return req ? saveKeybindings(keybindingsPath(configDir()), req.text, req.before) : INVALID
+  })
 }

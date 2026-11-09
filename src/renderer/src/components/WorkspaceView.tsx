@@ -1,7 +1,7 @@
 import { useContext, useRef, useState } from 'react'
 import type { TerminalSpec } from '../../../shared/ipc'
 import { MIN_JOIN_SIZE } from '../../../shared/uiState'
-import { closeSubTab, tabAnchor, toggleTabSettings } from '../actions'
+import { closeSubTab, tabAnchor, toggleSessionNotes, toggleTabSettings } from '../actions'
 import { MODE_LABELS } from '../constants'
 import { dragDivider, leaves } from '../layout'
 import {
@@ -20,6 +20,7 @@ import { DropdownMenu, type MenuItem } from './DropdownMenu'
 import { endDrag, fromFolder, startDrag } from '../dnd'
 import { isMuted } from '../waiting'
 import { BellIcon } from './Notifications'
+import { NotesIcon } from './NotesBar'
 import { TabPreview } from './TabPreview'
 import { SubTabLayout } from './LayoutView'
 import { StartScreen } from './StartScreen'
@@ -102,8 +103,9 @@ function SubTabBar({ workspace }: { workspace: Workspace }): React.JSX.Element {
   const fillGrid = useStore((s) => s.fillGrid)
   const moveToSubTab = useStore((s) => s.moveToSubTab)
   const active = workspace.subTabs.find((s) => s.key === workspace.activeSubTab)
+  const notesOpen = useStore((s) => !!(active && s.terminals[active.activePane]?.notesOpen))
 
-  const add = (spec: TerminalSpec): void => void addTerminal(workspace.key, spec)
+  const add =(spec: TerminalSpec): void => void addTerminal(workspace.key, spec)
   const newItems: MenuItem[] = [
     { header: 'Claude' },
     { label: MODE_LABELS.new, onSelect: () => add({ kind: 'claude', mode: 'new' }) },
@@ -178,6 +180,17 @@ function SubTabBar({ workspace }: { workspace: Workspace }): React.JSX.Element {
       <DropdownMenu className="tab-new chevron" label="▾" title="New terminal…" items={newItems} />
       <div className="spacer" />
       {active && (
+        <button
+          className={`icon-button notes-toggle${notesOpen ? ' pressed' : ''}`}
+          aria-label="Session notes"
+          aria-pressed={notesOpen}
+          title={notesOpen ? 'Hide notes' : 'Notes for this session'}
+          onClick={() => toggleSessionNotes(active.activePane)}
+        >
+          <NotesIcon />
+        </button>
+      )}
+      {active && (
         <DropdownMenu className="icon-button" label="⊞" title="Split" items={splitItems} />
       )}
     </div>
@@ -247,7 +260,8 @@ function SubTabItem({
   const isActive = sub.key === workspace.activeSubTab
   const canDrop = fromFolder(drag, workspace.key)
   const colors = main?.color ? tabColors(main.color, theme, isActive, 'session') : null
-  const muted = useStore((s) => {
+  const hasNotes = keys.some((k) => terminals[k]?.notes?.trim())
+  const muted =useStore((s) => {
     const t = s.terminals[keys[0]]
     return t ? isMuted(s, t) : false
   })
@@ -320,6 +334,11 @@ function SubTabItem({
         {otherFolder && <span className="tab-folder"> · {otherFolder}</span>}
       </span>
       {keys.length > 1 && <span className="pane-count">{keys.length}</span>}
+      {hasNotes && (
+        <span className="tab-notes" title="Has notes">
+          <NotesIcon size={12} />
+        </span>
+      )}
       {muted && (
         <span className="tab-muted" title="Muted: no sounds, toasts or notifications">
           <BellIcon off size={12} />

@@ -2,7 +2,8 @@ import {
   MAX_BOOKMARK_DEPTH,
   titleFromText,
   type BookmarkFolder,
-  type BookmarkNode
+  type BookmarkNode,
+  type BookmarkPrompt
 } from '../../shared/bookmarks'
 
 // The bookmark tree is edited here, immutably: every change returns a new tree, which the store
@@ -13,7 +14,7 @@ export type BookmarkDraft = {
   id?: string
   parent: string | null
   title: string
-} & ({ type: 'prompt'; text: string } | { type: 'folder' })
+} & ({ type: 'prompt'; text: string; hotkey?: string } | { type: 'folder' })
 
 let counter = 0
 
@@ -112,29 +113,73 @@ export function folderChoices(
 }
 
 /** Adds the draft, or applies it to the bookmark it edits (moving it if its folder changed). */
+/**
+ * Adds the draft, or applies it to the bookmark it edits (moving it if its folder changed). A
+ * prompt's hotkey is taken from any other prompt that had it.
+ */
 export function applyDraft(nodes: BookmarkNode[], draft: BookmarkDraft): BookmarkNode[] {
   const title = draft.title.trim()
+  const hotkey = draft.type === 'prompt' && draft.hotkey ? draft.hotkey : undefined
+  const prompt = (n: BookmarkPrompt): BookmarkPrompt => {
+    const { hotkey: _old, ...rest } = n // eslint-disable-line @typescript-eslint/no-unused-vars
+    return hotkey ? { ...rest, hotkey } : rest
+  }
+  const freed = hotkey ? withoutHotkey(nodes, hotkey) : nodes
   if (draft.id === undefined) {
     const id = newBookmarkId()
     const node: BookmarkNode =
       draft.type === 'prompt'
-        ? { type: 'prompt', id, title: title || titleFromText(draft.text), text: draft.text }
+        ? prompt({
+            type: 'prompt',
+            id,
+            title: title || titleFromText(draft.text),
+            text: draft.text
+          })
         : { type: 'folder', id, title, children: [] }
-    return insertNode(nodes, draft.parent, node)
+    return insertNode(freed, draft.parent, node)
   }
-  const edited = updateNode(nodes, draft.id, (n) =>
+  const edited = updateNode(freed, draft.id, (n) =>
     n.type === 'prompt' && draft.type === 'prompt'
-      ? { ...n, title: title || titleFromText(draft.text), text: draft.text }
+      ? prompt({ ...n, title: title || titleFromText(draft.text), text: draft.text })
       : { ...n, title }
   )
   return moveNode(edited, draft.id, draft.parent)
+}
+
+/** The tree with no prompt holding this hotkey. */
+function withoutHotkey(nodes: BookmarkNode[], hotkey: string): BookmarkNode[] {
+  return nodes.map((n) => {
+    if (n.type === 'folder') return { ...n, children: withoutHotkey(n.children, hotkey) }
+    if (n.hotkey !== hotkey) return n
+    const { hotkey: _gone, ...rest } = n // eslint-disable-line @typescript-eslint/no-unused-vars
+    return rest
+  })
+}
+
+/** The prompt a hotkey pastes, if any. */
+export function promptForHotkey(nodes: BookmarkNode[], hotkey: string): BookmarkPrompt | null {
+  for (const n of nodes) {
+    if (n.type === 'prompt' && n.hotkey === hotkey) return n
+    if (n.type === 'folder') {
+      const found = promptForHotkey(n.children, hotkey)
+      if (found) return found
+    }
+  }
+  return null
 }
 
 /** A draft that edits this bookmark. */
 export function draftFor(nodes: BookmarkNode[], node: BookmarkNode): BookmarkDraft {
   const parent = parentOf(nodes, node.id) ?? null
   return node.type === 'prompt'
-    ? { type: 'prompt', id: node.id, parent, title: node.title, text: node.text }
+    ? {
+        type: 'prompt',
+        id: node.id,
+        parent,
+        title: node.title,
+        text: node.text,
+        ...(node.hotkey ? { hotkey: node.hotkey } : {})
+      }
     : { type: 'folder', id: node.id, parent, title: node.title }
 }
 
